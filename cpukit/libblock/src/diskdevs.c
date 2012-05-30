@@ -189,10 +189,21 @@ create_disk(dev_t dev, const char *name, rtems_disk_device **dd_ptr)
     return RTEMS_NO_MEMORY;
   }
 
+  dd->disk_stats = malloc(sizeof (rtems_disk_stats));
+
+  if (dd->disk_stats != NULL) {
+    memset(dd->disk_stats,0,sizeof(rtems_disk_stats));
+  } else {
+    free(dd);
+    return RTEMS_NO_MEMORY;
+  }
+
   if (name != NULL) {
+
     alloc_name = strdup(name);
 
     if (alloc_name == NULL) {
+      free (dd->disk_stats);
       free(dd);
 
       return RTEMS_NO_MEMORY;
@@ -202,10 +213,12 @@ create_disk(dev_t dev, const char *name, rtems_disk_device **dd_ptr)
   if (name != NULL) {
     if (mknod(alloc_name, 0777 | S_IFBLK, dev) < 0) {
       free(alloc_name);
+      free (dd->disk_stats);
       free(dd);
       return RTEMS_UNSATISFIED;
     }
   }
+
 
   dd->dev = dev;
   dd->name = alloc_name;
@@ -354,6 +367,9 @@ free_disk_device(rtems_disk_device *dd)
   if (dd->name != NULL) {
     unlink(dd->name);
     free(dd->name);
+  }
+  if (dd->disk_stats != NULL) {
+    free(dd->disk_stats);
   }
   free(dd);
 }

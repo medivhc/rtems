@@ -136,6 +136,9 @@ typedef struct rtems_bdbuf_cache
   rtems_bdbuf_group*  groups;            /**< The groups. */
 
   bool                initialised;       /**< Initialised state. */
+
+  rtems_bdbuf_cache_stats cache_stats;   /**< Statistics in bdbuf */
+
 } rtems_bdbuf_cache;
 
 /**
@@ -1277,7 +1280,6 @@ rtems_bdbuf_get_buffer_from_lru_list (const rtems_disk_device *dd,
     if (empty_bd != NULL)
     {
       rtems_bdbuf_setup_empty_buffer (empty_bd, dd, block);
-
       return empty_bd;
     }
 
@@ -1329,7 +1331,11 @@ rtems_bdbuf_init (void)
 
   memset(&bdbuf_cache, 0, sizeof(bdbuf_cache));
   bdbuf_cache.initialised = true;
+  
+  memset(&(bdbuf_cache.cache_stats),0,sizeof(rtems_bdbuf_cache_stats));
+
   rtems_bdbuf_restore_preemption (prev_mode);
+
 
   /*
    * For unspecified cache alignments we use the CPU alignment.
@@ -1880,6 +1886,7 @@ rtems_bdbuf_create_read_request (const rtems_disk_device *dd,
   {
     case RTEMS_BDBUF_STATE_CACHED:
     case RTEMS_BDBUF_STATE_MODIFIED:
+      dd->disk_stats->read_hit ++;
       return;
     case RTEMS_BDBUF_STATE_EMPTY:
       rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_TRANSFER);
@@ -2007,11 +2014,14 @@ rtems_bdbuf_read (const rtems_disk_device *dd,
   rtems_bdbuf_lock_cache ();
   rtems_bdbuf_create_read_request (dd, media_block, dd->bds_per_group, req, &bd);
 
+
   if (req->bufnum > 0)
   {
     sc = rtems_bdbuf_execute_transfer_request (dd, req, true);
     if (sc == RTEMS_SUCCESSFUL)
     {
+      dd->disk_stats->read_count += req->bufnum;
+
       rtems_chain_extract_unprotected (&bd->link);
       rtems_bdbuf_group_obtain (bd);
     }
@@ -2292,7 +2302,10 @@ rtems_bdbuf_swapout_write (rtems_bdbuf_swapout_transfer* transfer)
       if (write)
       {
         rtems_bdbuf_execute_transfer_request (dd, transfer->write_req, false);
-
+        /*
+         * update the disk stats
+         */
+        dd->disk_stats->write_count += transfer->write_req->bufnum;
         transfer->write_req->status = RTEMS_RESOURCE_IN_USE;
         transfer->write_req->bufnum = 0;
       }
@@ -2509,6 +2522,7 @@ rtems_bdbuf_swapout_processing (unsigned long                 timer_delta,
                                            update_timers,
                                            timer_delta);
 
+  bdbuf_cache.cache_stats.swapout_count++;
   /*
    * We have all the buffers that have been modified for this device so the
    * cache can be unlocked because the state of each buffer has been set to
@@ -2924,4 +2938,29 @@ rtems_bdbuf_set_block_size (rtems_disk_device *dd, uint32_t block_size)
   rtems_bdbuf_unlock_cache ();
 
   return sc;
+}
+
+void rtems_bdbuf_get_stats(rtems_bdbuf_stats *stats)
+{
+  rtems_disk_device *dd ;
+  dev_t dev= -1;
+
+  uint32_t  total_read_count = 0;
+  uint32_t  total_write_count = 0;
+  uint32_t  total_read_hit = 0;
+
+  rtems_bdbuf_lock_cache ();
+
+  while ((dd = rtems_disk_next(dev)) != NULL) {
+    dev = rtems_disk_get_device_identifier(dd);
+    total_write_count +=dd->disk_stats->write_count;
+    total_read_count +=dd->disk_stats->read_count;
+    total_read_hit +=dd->disk_stats->read_hit;
+  }
+  stats->total_write_count = total_write_count;
+  stats->total_read_count = total_read_count;
+  stats->total_read_hit = total_read_hit;
+  stats->cache.swapout_count = bdbuf_cache.cache_stats.swapout_count;
+
+  rtems_bdbuf_unlock_cache ();
 }

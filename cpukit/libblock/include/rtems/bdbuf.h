@@ -1,7 +1,6 @@
 /**
  * @file
- *
- * @ingroup rtems_bdbuf
+ * * @ingroup rtems_bdbuf
  *
  * Block device buffer management.
  */
@@ -379,6 +378,24 @@ typedef struct rtems_bdbuf_config {
                                                 * allocation size. */
 } rtems_bdbuf_config;
 
+
+/**
+ * @brief Statistics in bdbuf cache.
+ */
+typedef struct rtems_bdbuf_cache_stats{
+  uint32_t  swapout_count;  /**< Number of swapout execute. */
+} rtems_bdbuf_cache_stats;
+
+/**
+ * @brief Statistics for bdbuf.
+ */
+typedef struct rtems_bdbuf_stats {
+  uint32_t  total_read_count;   /**< Number of blocks to read. */
+  uint32_t  total_write_count;        /**< Number of blocks to write. */
+  uint32_t  total_read_hit;    /**< Number of read hit */
+  rtems_bdbuf_cache_stats cache;  /** < Statistics in cache */
+} rtems_bdbuf_stats;
+
 /**
  * External reference to the configuration.
  *
@@ -643,6 +660,18 @@ rtems_bdbuf_purge_dev (const rtems_disk_device *dd);
  */
 rtems_status_code
 rtems_bdbuf_set_block_size (rtems_disk_device *dd, uint32_t block_size);
+
+/**
+ * @brief Get the bdbuf statistics.
+ *
+ * Before you can use this function, the rtems_bdbuf_init() routine must be
+ * called at least once to initialize the cache, otherwise a fatal error will
+ * occur.
+ *
+ * @param stats [out] The bdbuf statistics.
+ */
+void
+rtems_bdbuf_get_stats (rtems_bdbuf_stats *stats);
 
 /** @} */
 

@@ -55,6 +55,15 @@ typedef int (*rtems_block_device_ioctl)(
 );
 
 /**
+ * @brief Statistics for disk device. Counted by block size.
+ */
+typedef struct rtems_disk_stats {
+  uint32_t read_count;      /**< Number of read. */ 
+  uint32_t write_count;     /**< Number of write. */ 
+  uint32_t read_hit;        /**< Number of read hit. */ 
+} rtems_disk_stats;
+
+/**
  * @brief Description of a disk device (logical and physical disks).
  *
  * An array of pointer tables to rtems_disk_device structures is maintained.
@@ -153,6 +162,11 @@ struct rtems_disk_device {
    * releases this disk.
    */
   bool deleted;
+
+  /**
+   * @brief Statistics for disk device.
+   */
+  rtems_disk_stats *disk_stats;
 };
 
 /**
@@ -215,6 +229,13 @@ static inline rtems_blkdev_bnum rtems_disk_get_block_count(
 )
 {
   return dd->size;
+}
+
+static inline rtems_disk_stats *rtems_disk_get_disk_stats(
+  const rtems_disk_device *dd
+)
+{
+  return dd->disk_stats;
 }
 
 /** @} */
