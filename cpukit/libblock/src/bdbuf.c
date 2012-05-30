@@ -1331,8 +1331,8 @@ rtems_bdbuf_init (void)
 
   memset(&bdbuf_cache, 0, sizeof(bdbuf_cache));
   bdbuf_cache.initialised = true;
-  
-  memset(&(bdbuf_cache.cache_stats),0,sizeof(rtems_bdbuf_cache_stats));
+
+  bdbuf_cache.cache_stats.swapout_count = 0;
 
   rtems_bdbuf_restore_preemption (prev_mode);
 

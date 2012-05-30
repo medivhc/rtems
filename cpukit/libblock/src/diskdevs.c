@@ -175,6 +175,7 @@ create_disk(dev_t dev, const char *name, rtems_disk_device **dd_ptr)
   rtems_disk_device **dd_entry = create_disk_table_entry(dev);
   rtems_disk_device *dd = NULL;
   char *alloc_name = NULL;
+  rtems_disk_stats *disk_stats;
 
   if (dd_entry == NULL) {
     return RTEMS_NO_MEMORY;
@@ -189,11 +190,9 @@ create_disk(dev_t dev, const char *name, rtems_disk_device **dd_ptr)
     return RTEMS_NO_MEMORY;
   }
 
-  dd->disk_stats = malloc(sizeof (rtems_disk_stats));
+  disk_stats = malloc(sizeof (rtems_disk_stats));
 
-  if (dd->disk_stats != NULL) {
-    memset(dd->disk_stats,0,sizeof(rtems_disk_stats));
-  } else {
+  if (disk_stats == NULL) {
     free(dd);
     return RTEMS_NO_MEMORY;
   }
@@ -203,7 +202,7 @@ create_disk(dev_t dev, const char *name, rtems_disk_device **dd_ptr)
     alloc_name = strdup(name);
 
     if (alloc_name == NULL) {
-      free (dd->disk_stats);
+      free (disk_stats);
       free(dd);
 
       return RTEMS_NO_MEMORY;
@@ -213,13 +212,18 @@ create_disk(dev_t dev, const char *name, rtems_disk_device **dd_ptr)
   if (name != NULL) {
     if (mknod(alloc_name, 0777 | S_IFBLK, dev) < 0) {
       free(alloc_name);
-      free (dd->disk_stats);
+      free (disk_stats);
       free(dd);
       return RTEMS_UNSATISFIED;
     }
   }
 
 
+  disk_stats->read_count = 0;
+  disk_stats->write_count = 0;
+  disk_stats->read_hit = 0;
+  dd->disk_stats = disk_stats;
+  
   dd->dev = dev;
   dd->name = alloc_name;
   dd->uses = 0;
