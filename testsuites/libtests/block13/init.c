@@ -31,10 +31,10 @@
 static rtems_bdbuf_stats stats;
 
 static const rtems_blkdev_bnum sequence_a [] = {
-   1, 2, 3, 4,BLOCK_COUNT
+   1, 2, 3, 4,5,1, 2, 3, 4,1, 2, 3, 4,1, 2, 3, 4,1, 2, 3, 4,BLOCK_COUNT
 };
 static const rtems_blkdev_bnum sequence_b [] = {
-  0,1,2,3,BLOCK_COUNT
+  0,1,2,3,0,1,2,3,0,1,2,3,BLOCK_COUNT
 };
 
 

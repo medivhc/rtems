@@ -1,6 +1,6 @@
 /**
  * @file
- * * @ingroup rtems_bdbuf
+ * @ingroup rtems_bdbuf
  *
  * Block device buffer management.
  */
