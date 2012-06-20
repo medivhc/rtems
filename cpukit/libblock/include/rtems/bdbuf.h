@@ -309,6 +309,7 @@ typedef struct rtems_bdbuf_group rtems_bdbuf_group;
 typedef struct rtems_bdbuf_buffer
 {
   rtems_chain_node link;       /**< Link the BD onto a number of lists. */
+  rtems_chain_node node;       /**< List  */
 
   struct rtems_bdbuf_avl_node
   {
@@ -334,6 +335,8 @@ typedef struct rtems_bdbuf_buffer
                                   * has been held in the cache modified. */
 
   int   references;              /**< Allow reference counting by owner. */
+
+  uint8_t flags;
   void* user;                    /**< User data. */
 } rtems_bdbuf_buffer;
 
@@ -674,6 +677,23 @@ rtems_bdbuf_get_device_stats (const rtems_disk_device *dd,
  */
 void
 rtems_bdbuf_reset_device_stats (rtems_disk_device *dd);
+
+/**
+ * @brief Init replace policy 
+ */
+rtems_status_code
+rtems_bdbuf_init_policy();
+
+/**
+* @brief Get the victime bdbuf.
+*
+* @return A pointer of the bdbuf.
+*/
+rtems_bdbuf_buffer* rtems_bdbuf_select_victim(void);
+
+void rtems_bdbuf_enqueue(rtems_bdbuf_buffer *bd);
+void rtems_bdbuf_dequeue(rtems_bdbuf_buffer *bd);
+bool rtems_bdbuf_isqueued(rtems_bdbuf_buffer *bd);
 
 /** @} */
 
