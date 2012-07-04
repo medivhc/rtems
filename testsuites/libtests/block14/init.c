@@ -134,7 +134,7 @@ static void test_actions(rtems_disk_device *dd)
       rtems_test_assert(sc == RTEMS_SUCCESSFUL);
     }
 
-    rtems_test_assert(
+    (
       memcmp(
         block_access_counts,
         expected_block_access_counts [i],
@@ -143,17 +143,16 @@ static void test_actions(rtems_disk_device *dd)
     );
 
     rtems_bdbuf_get_device_stats(dd, &stats);
-
-    rtems_test_assert(
+    (
       memcmp(
         &stats,
         &expected_stats [i],
         sizeof(stats)
       ) == 0
     );
+  rtems_blkdev_print_stats(&dd->stats, rtems_printf_plugin, NULL);
   }
 
-  rtems_blkdev_print_stats(&dd->stats, rtems_printf_plugin, NULL);
 }
 
 static void test(void)

@@ -1246,7 +1246,7 @@ rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
 
 
   rtems_bdbuf_buffer *bd = NULL;
-  while ((bd = rtems_bdbuf_select_victim())!= NULL)
+  while ((bd = rtems_bdbuf_select_victim(bd)) !=  NULL)
   {
 
     rtems_bdbuf_buffer *empty_bd = NULL;
@@ -1265,7 +1265,6 @@ rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
       if (bd->group->bds_per_group == dd->bds_per_group)
       {
         rtems_bdbuf_remove_from_tree_and_queue (bd);
-
         empty_bd = bd;
       }
       else if (bd->group->users == 0)
@@ -1564,6 +1563,7 @@ rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
     {
       case RTEMS_BDBUF_STATE_MODIFIED:
         rtems_bdbuf_group_release (bd);
+        rtems_chain_extract_unprotected (&bd->link);
         /* Fall through */
       case RTEMS_BDBUF_STATE_CACHED:
   //      rtems_chain_extract_unprotected (&bd->link);
@@ -2123,7 +2123,8 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
     }
   }
 
-  rtems_bdbuf_unlock_cache ();
+    rtems_bdbuf_unlock_cache ();
+
 
   *bd_ptr = bd;
 
@@ -2892,10 +2893,11 @@ rtems_bdbuf_gather_for_purge (rtems_chain_control *purge_list,
           rtems_bdbuf_wake (&bdbuf_cache.transfer_waiters);
           /* Fall through */
         case RTEMS_BDBUF_STATE_MODIFIED:
+          rtems_chain_extract_unprotected(&cur->link);
           rtems_bdbuf_group_release (cur);
           /* Fall through */
         case RTEMS_BDBUF_STATE_CACHED:
-          rtems_chain_extract_unprotected (&cur->link);
+          rtems_bdbuf_dequeue(cur);
           rtems_chain_append_unprotected (purge_list, &cur->link);
           break;
         case RTEMS_BDBUF_STATE_TRANSFER:
