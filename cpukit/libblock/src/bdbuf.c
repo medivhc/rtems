@@ -1052,11 +1052,11 @@ rtems_bdbuf_remove_from_tree_and_queue (rtems_bdbuf_buffer *bd)
       break;
     case RTEMS_BDBUF_STATE_CACHED:
       rtems_bdbuf_remove_from_tree (bd);
+      rtems_bdbuf_dequeue(bd);
       break;
     default:
       rtems_bdbuf_fatal (bd->state, RTEMS_BLKDEV_FATAL_BDBUF_STATE_10);
   }
-  rtems_bdbuf_dequeue(bd);
 //  rtems_chain_extract_unprotected (&bd->link);
 }
 

@@ -76,7 +76,6 @@ test ()
   status = close (fd);
   rtems_test_assert (status == 0);
 
-
   fd = open (file_name, O_WRONLY);
   rtems_test_assert (fd >= 0);
   for (int i = 0; i < 10; ++i) {
@@ -105,5 +104,4 @@ test ()
   rtems_test_assert (status == 0);
 
   test_case_leave();
-
 }
