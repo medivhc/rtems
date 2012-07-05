@@ -1,5 +1,5 @@
 /*
- *  COPYRIGHT (c) 1989-2010.
+ *  COPYRIGHT (c) 1989-2012.
  *  On-Line Applications Research Corporation (OAR).
  *
  *  The license and distribution terms for this file may be
@@ -22,6 +22,9 @@
 
 #include <rtems.h>
 #include <rtems/libio.h>
+
+/* forward declarations to avoid warnings */
+rtems_task Init(rtems_task_argument argument);
 
 #define SEND_RCV_BUFSIZ 12
 
@@ -50,11 +53,6 @@ rtems_task Init(
   rtems_test_assert( offset == -1 );
   rtems_test_assert( errno == ESPIPE );
 
-  puts( "Init - ioctl: FIONBIO -- Expected EFAULT" );
-  status = ioctl( fd, FIONBIO, NULL );
-  rtems_test_assert( status == -1 );
-  rtems_test_assert( errno == EFAULT );
-
   puts( "Init - ioctl: FIONBIO -- OK" );
   status = ioctl( fd, FIONBIO, &flag );
   rtems_test_assert( status == 0 );
@@ -65,14 +63,9 @@ rtems_task Init(
   rtems_test_assert( status == 0 );
 
   puts( "Init - ioctl: Dummy Command -- Expected EINVAL" );
-  status = ioctl( fd, -1, NULL );
+  status = ioctl( fd, -1 );
   rtems_test_assert( status == -1 );
   rtems_test_assert( errno == EINVAL );
-
-  puts( "Init - ioctl: FIONREAD -- Expected EFAULT" );
-  status = ioctl( fd, FIONREAD, NULL );
-  rtems_test_assert( status == -1 );
-  rtems_test_assert( errno == EFAULT );
 
   puts( "Init - ioctl: FIONREAD -- OK" );
   status = ioctl( fd, FIONREAD, &pipe_length );

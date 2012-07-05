@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <inttypes.h>
 
 #include <rtems/libio_.h>
 
@@ -400,7 +401,7 @@ static int msdos_format_determine_fmt_params
   if (ret_val == 0) {
     total_size = fmt_params->bytes_per_sector * fmt_params->totl_sector_cnt;
     msdos_format_printf (rqdata, MSDOS_FMT_INFO_LEVEL_DETAIL,
-                         "bytes per sector: %d\ntotal sectors: %d\ntotal size: %lu\n",
+                         "bytes per sector: %" PRIu32 "\ntotal sectors: %" PRIu32 "\ntotal size: %" PRIu64 "\n",
                          fmt_params->bytes_per_sector, fmt_params->totl_sector_cnt, total_size);
   }
 
@@ -483,14 +484,22 @@ static int msdos_format_determine_fmt_params
        * NOTE: maximum sect_per_clust is arbitrarily choosen with values that
        * are a compromise concerning capacity and efficency
        */
+      uint32_t fat12_sect_per_clust = 8;
+      uint32_t fat16_sect_per_clust = 32;
+
+      if (rqdata != NULL && rqdata->sectors_per_cluster != 0) {
+        fat12_sect_per_clust = rqdata->sectors_per_cluster;
+        fat16_sect_per_clust = rqdata->sectors_per_cluster;
+      }
+
       if (fmt_params->totl_sector_cnt
-          < ((uint32_t)FAT_FAT12_MAX_CLN)*8) {
+          < FAT_FAT12_MAX_CLN * fat12_sect_per_clust) {
         fmt_params->fattype = FAT_FAT12;
         /* start trying with small clusters */
         fmt_params->sectors_per_cluster = 2;
       }
       else if (fmt_params->totl_sector_cnt
-               < ((uint32_t)FAT_FAT16_MAX_CLN)*32) {
+               < FAT_FAT16_MAX_CLN * fat16_sect_per_clust) {
         fmt_params->fattype = FAT_FAT16;
         /* start trying with small clusters */
         fmt_params->sectors_per_cluster = 2;

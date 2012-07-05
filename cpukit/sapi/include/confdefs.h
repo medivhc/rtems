@@ -1225,6 +1225,10 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
     #define CONFIGURE_SWAPOUT_WORKER_TASK_PRIORITY \
                               RTEMS_BDBUF_SWAPOUT_WORKER_TASK_PRIORITY_DEFAULT
   #endif
+  #ifndef CONFIGURE_BDBUF_TASK_STACK_SIZE
+    #define CONFIGURE_BDBUF_TASK_STACK_SIZE \
+                              RTEMS_BDBUF_TASK_STACK_SIZE_DEFAULT
+  #endif
   #ifndef CONFIGURE_BDBUF_CACHE_MEMORY_SIZE
     #define CONFIGURE_BDBUF_CACHE_MEMORY_SIZE \
                               RTEMS_BDBUF_CACHE_MEMORY_SIZE_DEFAULT
@@ -1237,6 +1241,10 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
     #define CONFIGURE_BDBUF_BUFFER_MAX_SIZE \
                               RTEMS_BDBUF_BUFFER_MAX_SIZE_DEFAULT
   #endif
+  #ifndef CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY
+    #define CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY \
+                              RTEMS_BDBUF_READ_AHEAD_TASK_PRIORITY_DEFAULT
+  #endif
   #ifdef CONFIGURE_INIT
     const rtems_bdbuf_config rtems_bdbuf_configuration = {
       CONFIGURE_BDBUF_MAX_READ_AHEAD_BLOCKS,
@@ -1246,11 +1254,22 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
       CONFIGURE_SWAPOUT_BLOCK_HOLD,
       CONFIGURE_SWAPOUT_WORKER_TASKS,
       CONFIGURE_SWAPOUT_WORKER_TASK_PRIORITY,
+      CONFIGURE_BDBUF_TASK_STACK_SIZE,
       CONFIGURE_BDBUF_CACHE_MEMORY_SIZE,
       CONFIGURE_BDBUF_BUFFER_MIN_SIZE,
-      CONFIGURE_BDBUF_BUFFER_MAX_SIZE
+      CONFIGURE_BDBUF_BUFFER_MAX_SIZE,
+      CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY
     };
   #endif
+
+  #define CONFIGURE_LIBBLOCK_TASKS \
+    (1 + CONFIGURE_SWAPOUT_WORKER_TASKS + \
+    (CONFIGURE_BDBUF_MAX_READ_AHEAD_BLOCKS != 0))
+
+  #define CONFIGURE_LIBBLOCK_TASK_EXTRA_STACKS \
+    (CONFIGURE_LIBBLOCK_TASKS * \
+    (CONFIGURE_BDBUF_TASK_STACK_SIZE <= CONFIGURE_MINIMUM_TASK_STACK_SIZE ? \
+    0 : CONFIGURE_BDBUF_TASK_STACK_SIZE - CONFIGURE_MINIMUM_TASK_STACK_SIZE))
 
   /*
    *  Semaphores:
@@ -1269,6 +1288,8 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
     #error BDBUF Cache does not use a buffer configuration table. Please remove.
   #endif
 #else
+  #define CONFIGURE_LIBBLOCK_TASKS 0
+  #define CONFIGURE_LIBBLOCK_TASK_EXTRA_STACKS 0
   #define CONFIGURE_LIBBLOCK_SEMAPHORES 0
 #endif /* CONFIGURE_APPLICATION_NEEDS_LIBBLOCK */
 
@@ -1455,6 +1476,9 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
   #ifndef CONFIGURE_MAXIMUM_TASKS
     #define CONFIGURE_MAXIMUM_TASKS               0
   #endif
+
+  #define CONFIGURE_TASKS \
+    (CONFIGURE_MAXIMUM_TASKS + CONFIGURE_LIBBLOCK_TASKS)
 
   #ifndef CONFIGURE_DISABLE_CLASSIC_API_NOTEPADS
     #define CONFIGURE_NOTEPADS_ENABLED           TRUE
@@ -2073,7 +2097,7 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
  *  requirements.
  */
 #define CONFIGURE_TOTAL_TASKS_AND_THREADS \
-   (CONFIGURE_MAXIMUM_TASKS + \
+   (CONFIGURE_TASKS + \
     CONFIGURE_MAXIMUM_POSIX_THREADS + CONFIGURE_MAXIMUM_ADA_TASKS + \
     CONFIGURE_MAXIMUM_GOROUTINES)
 
@@ -2176,7 +2200,7 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
     _Configure_From_stackspace( CONFIGURE_IDLE_TASK_STACK_SIZE ) )
 
 #define CONFIGURE_TASKS_STACK \
-  (_Configure_Max_Objects( CONFIGURE_MAXIMUM_TASKS ) * \
+  (_Configure_Max_Objects( CONFIGURE_TASKS ) * \
     _Configure_From_stackspace( CONFIGURE_MINIMUM_TASK_STACK_SIZE ) )
 
 #define CONFIGURE_POSIX_THREADS_STACK \
@@ -2219,6 +2243,7 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
     CONFIGURE_GOROUTINES_STACK + \
     CONFIGURE_ADA_TASKS_STACK + \
     CONFIGURE_EXTRA_MPCI_RECEIVE_SERVER_STACK + \
+    CONFIGURE_LIBBLOCK_TASK_EXTRA_STACKS + \
     CONFIGURE_EXTRA_TASK_STACKS \
   )
 
@@ -2227,7 +2252,7 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
    *  This is the Classic API Configuration Table.
    */
   rtems_api_configuration_table Configuration_RTEMS_API = {
-    CONFIGURE_MAXIMUM_TASKS,
+    CONFIGURE_TASKS,
     CONFIGURE_NOTEPADS_ENABLED,
     CONFIGURE_MAXIMUM_TIMERS + CONFIGURE_TIMER_FOR_SHARED_MEMORY_DRIVER,
     CONFIGURE_SEMAPHORES,
@@ -2298,6 +2323,7 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
     CONFIGURE_STACK_SPACE_SIZE,               /* required stack space */
     CONFIGURE_MAXIMUM_USER_EXTENSIONS,        /* maximum dynamic extensions */
     CONFIGURE_MICROSECONDS_PER_TICK,          /* microseconds per clock tick */
+    1000 * CONFIGURE_MICROSECONDS_PER_TICK,   /* nanoseconds per clock tick */
     CONFIGURE_TICKS_PER_TIMESLICE,            /* ticks per timeslice quantum */
     CONFIGURE_IDLE_TASK_BODY,                 /* user's IDLE task */
     CONFIGURE_IDLE_TASK_STACK_SIZE,           /* IDLE task stack size */

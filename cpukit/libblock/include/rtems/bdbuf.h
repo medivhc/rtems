@@ -46,7 +46,7 @@ extern "C" {
  * @ingroup rtems_libblock
  *
  * The Block Device Buffer Management implements a cache between the disk
- * devices and file systems.  The code provides read ahead and write queuing to
+ * devices and file systems.  The code provides read-ahead and write queuing to
  * the drivers and fast cache look-up using an AVL tree.
  *
  * The block size used by a file system can be set at runtime and must be a
@@ -141,7 +141,7 @@ extern "C" {
  * A block being accessed is given to the file system layer and not accessible
  * to another requester until released back to the cache.  The same goes to a
  * buffer in the transfer state.  The transfer state means being read or
- * written.  If the file system has modifed the block and releases it as
+ * written.  If the file system has modified the block and releases it as
  * modified it placed on the cache's modified list and a hold timer
  * initialised.  The buffer is held for the hold time before being written to
  * disk.  Buffers are held for a configurable period of time on the modified
@@ -152,10 +152,13 @@ extern "C" {
  * written.  This would be a performance problem.
  *
  * The code performs multiple block reads and writes.  Multiple block reads or
- * read ahead increases performance with hardware that supports it.  It also
+ * read-ahead increases performance with hardware that supports it.  It also
  * helps with a large cache as the disk head movement is reduced.  It however
  * is a speculative operation so excessive use can remove valuable and needed
- * blocks from the cache.
+ * blocks from the cache.  The read-ahead is triggered after two misses of
+ * ascending consecutive blocks or a read hit of a block read by the
+ * most-resent read-ahead transfer.  The read-ahead works per disk, but all
+ * transfers are issued by the read-ahead task.
  *
  * The cache has the following lists of buffers:
  *  - LRU: Accessed or transfered buffers released in least recently used
@@ -315,7 +318,7 @@ typedef struct rtems_bdbuf_buffer
     signed char                bal;    /**< The balance of the sub-tree */
   } avl;
 
-  const rtems_disk_device *dd;  /**< disk device */
+  rtems_disk_device *dd;        /**< disk device */
 
   rtems_blkdev_bnum block;      /**< block number on the device */
 
@@ -363,20 +366,24 @@ typedef struct rtems_bdbuf_config {
                                                 * at once. */
   rtems_task_priority swapout_priority;        /**< Priority of the swap out
                                                 * task. */
-  uint32_t            swapout_period;          /**< Period swapout checks buf
+  uint32_t            swapout_period;          /**< Period swap-out checks buf
                                                 * timers. */
   uint32_t            swap_block_hold;         /**< Period a buffer is held. */
   size_t              swapout_workers;         /**< The number of worker
-                                                * threads for the swapout
+                                                * threads for the swap-out
                                                 * task. */
   rtems_task_priority swapout_worker_priority; /**< Priority of the swap out
                                                 * task. */
+  size_t              task_stack_size;         /**< Task stack size for swap-out
+                                                * task and worker threads. */
   size_t              size;                    /**< Size of memory in the
                                                 * cache */
   uint32_t            buffer_min;              /**< Minimum buffer size. */
   uint32_t            buffer_max;              /**< Maximum buffer size
                                                 * supported. It is also the
                                                 * allocation size. */
+  rtems_task_priority read_ahead_priority;     /**< Priority of the read-ahead
+                                                * task. */
 } rtems_bdbuf_config;
 
 /**
@@ -387,8 +394,8 @@ typedef struct rtems_bdbuf_config {
 extern const rtems_bdbuf_config rtems_bdbuf_configuration;
 
 /**
- * The max_read_ahead_blocks value is altered if there are fewer buffers
- * than this defined max. This stops thrashing in the cache.
+ * The default value for the maximum read-ahead blocks disables the read-ahead
+ * feature.
  */
 #define RTEMS_BDBUF_MAX_READ_AHEAD_BLOCKS_DEFAULT    0
 
@@ -418,10 +425,21 @@ extern const rtems_bdbuf_config rtems_bdbuf_configuration;
 #define RTEMS_BDBUF_SWAPOUT_WORKER_TASKS_DEFAULT     0
 
 /**
- * Default swap-out worker task priority. The same as the swapout task.
+ * Default swap-out worker task priority. The same as the swap-out task.
  */
 #define RTEMS_BDBUF_SWAPOUT_WORKER_TASK_PRIORITY_DEFAULT \
                              RTEMS_BDBUF_SWAPOUT_TASK_PRIORITY_DEFAULT
+
+/**
+ * Default read-ahead task priority.  The same as the swap-out task.
+ */
+#define RTEMS_BDBUF_READ_AHEAD_TASK_PRIORITY_DEFAULT \
+  RTEMS_BDBUF_SWAPOUT_TASK_PRIORITY_DEFAULT
+
+/**
+ * Default task stack size for swap-out and worker tasks.
+ */
+#define RTEMS_BDBUF_TASK_STACK_SIZE_DEFAULT RTEMS_MINIMUM_STACK_SIZE
 
 /**
  * Default size of memory allocated to the cache.
@@ -455,7 +473,7 @@ rtems_bdbuf_init (void);
 
 /**
  * Get block buffer for data to be written into. The buffers is set to the
- * access or modifed access state. If the buffer is in the cache and modified
+ * access or modified access state. If the buffer is in the cache and modified
  * the state is access modified else the state is access. This buffer contents
  * are not initialised if the buffer is not already in the cache. If the block
  * is already resident in memory it is returned how-ever if not in memory the
@@ -483,7 +501,7 @@ rtems_bdbuf_init (void);
  */
 rtems_status_code
 rtems_bdbuf_get (
-  const rtems_disk_device *dd,
+  rtems_disk_device *dd,
   rtems_blkdev_bnum block,
   rtems_bdbuf_buffer** bd
 );
@@ -491,7 +509,7 @@ rtems_bdbuf_get (
 /**
  * Get the block buffer and if not already in the cache read from the disk. If
  * specified block already cached return. The buffer is set to the access or
- * modifed access state. If the buffer is in the cache and modified the state
+ * modified access state. If the buffer is in the cache and modified the state
  * is access modified else the state is access. If block is already being read
  * from disk for being written to disk this call blocks. If the buffer is
  * waiting to be written it is removed from modified queue and returned to the
@@ -517,7 +535,7 @@ rtems_bdbuf_get (
  */
 rtems_status_code
 rtems_bdbuf_read (
-  const rtems_disk_device *dd,
+  rtems_disk_device *dd,
   rtems_blkdev_bnum block,
   rtems_bdbuf_buffer** bd
 );
@@ -594,7 +612,7 @@ rtems_bdbuf_sync (rtems_bdbuf_buffer* bd);
 /**
  * Synchronize all modified buffers for this device with the disk and wait
  * until the transfers have completed. The sync mutex for the cache is locked
- * stopping the addition of any further modifed buffers. It is only the
+ * stopping the addition of any further modified buffers. It is only the
  * currently modified buffers that are written.
  *
  * @note Nesting calls to sync multiple devices will be handled sequentially. A
@@ -609,12 +627,12 @@ rtems_bdbuf_sync (rtems_bdbuf_buffer* bd);
  * @retval RTEMS_SUCCESSFUL Successful operation. 
  */
 rtems_status_code
-rtems_bdbuf_syncdev (const rtems_disk_device *dd);
+rtems_bdbuf_syncdev (rtems_disk_device *dd);
 
 /**
  * @brief Purges all buffers corresponding to the disk device @a dd.
  *
- * This may result in loss of data.
+ * This may result in loss of data.  The read-ahead state of this device is reset.
  *
  * Before you can use this function, the rtems_bdbuf_init() routine must be
  * called at least once to initialize the cache, otherwise a fatal error will
@@ -623,13 +641,13 @@ rtems_bdbuf_syncdev (const rtems_disk_device *dd);
  * @param dd [in] The disk device.
  */
 void
-rtems_bdbuf_purge_dev (const rtems_disk_device *dd);
+rtems_bdbuf_purge_dev (rtems_disk_device *dd);
 
 /**
  * @brief Sets the block size of a disk device.
  *
- * This will also change the block_to_media_block_shift and bds_per_group
- * fields of the disk device.
+ * This will set the block size derived fields of the disk device.  The
+ * read-ahead state of this device is reset.
  *
  * Before you can use this function, the rtems_bdbuf_init() routine must be
  * called at least once to initialize the cache, otherwise a fatal error will
@@ -643,6 +661,19 @@ rtems_bdbuf_purge_dev (const rtems_disk_device *dd);
  */
 rtems_status_code
 rtems_bdbuf_set_block_size (rtems_disk_device *dd, uint32_t block_size);
+
+/**
+ * @brief Returns the block device statistics.
+ */
+void
+rtems_bdbuf_get_device_stats (const rtems_disk_device *dd,
+                              rtems_blkdev_stats      *stats);
+
+/**
+ * @brief Resets the block device statistics.
+ */
+void
+rtems_bdbuf_reset_device_stats (rtems_disk_device *dd);
 
 /** @} */
 

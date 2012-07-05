@@ -60,9 +60,9 @@ static rtems_task Init(rtems_task_argument argument);
 /* In case of trouble change this to 1 or 2 for more output */
 static unsigned output_level = 0;
 
-static const rtems_disk_device *dd_a;
+static rtems_disk_device *dd_a;
 
-static const rtems_disk_device *dd_b;
+static rtems_disk_device *dd_b;
 
 static rtems_id task_id_init;
 
@@ -151,11 +151,11 @@ static rtems_bdbuf_buffer *get(enum get_type type, enum blk_kind kind)
   rtems_bdbuf_buffer *bd = NULL;
   rtems_blkdev_bnum blk_index = 0;
   rtems_status_code (*get_bd)(
-    const rtems_disk_device *,
+    rtems_disk_device *,
     rtems_blkdev_bnum,
     rtems_bdbuf_buffer **
   ) = NULL;
-  const rtems_disk_device *dd = NULL;
+  rtems_disk_device *dd = NULL;
   size_t bds_per_group = 0;
 
   switch (kind) {
@@ -393,7 +393,7 @@ static int disk_ioctl(rtems_disk_device *dd, uint32_t req, void *argp)
 static void disk_register(
   uint32_t block_size,
   rtems_blkdev_bnum block_count,
-  const rtems_disk_device **dd_ptr
+  rtems_disk_device **dd_ptr
 )
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
@@ -516,7 +516,7 @@ static rtems_task Init(rtems_task_argument argument)
 
 #define CONFIGURE_USE_IMFS_AS_BASE_FILESYSTEM
 
-#define CONFIGURE_MAXIMUM_TASKS 6
+#define CONFIGURE_MAXIMUM_TASKS 4
 #define CONFIGURE_MAXIMUM_DRIVERS 4
 
 #define CONFIGURE_RTEMS_INIT_TASKS_TABLE

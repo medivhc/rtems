@@ -56,6 +56,10 @@ bsp_stack_und_size = ALIGN (bsp_stack_und_size, bsp_stack_align);
 bsp_stack_main_size = DEFINED (bsp_stack_main_size) ? bsp_stack_main_size : 0;
 bsp_stack_main_size = ALIGN (bsp_stack_main_size, bsp_stack_align);
 
+MEMORY {
+	UNEXPECTED_SECTIONS : ORIGIN = 0xffffffff, LENGTH = 0
+}
+
 SECTIONS {
 	.start : {
 		bsp_section_start_begin = .;
@@ -306,6 +310,15 @@ SECTIONS {
 		_bsd__start_set_sysctl_set = .;
 		*(_bsd_set_sysctl_set);
 		_bsd__stop_set_sysctl_set = .;
+		__start_pcpu_set = .;
+		*(set_pcpu);
+		__stop_pcpu_set = .;
+		_bsd__start_set_ieee80211_ioctl_getset = .;
+		*(_bsd_set_ieee80211_ioctl_getset);
+		_bsd__stop_set_ieee80211_ioctl_getset = .;
+		_bsd__start_set_ieee80211_ioctl_setset = .;
+		*(_bsd_set_ieee80211_ioctl_setset);
+		_bsd__stop_set_ieee80211_ioctl_setset = .;
 
 		bsp_section_rodata_end = .;
 	} > REGION_RODATA AT > REGION_RODATA_LOAD
@@ -424,6 +437,13 @@ SECTIONS {
 	.note.gnu.arm.ident 0 : { KEEP (*(.note.gnu.arm.ident)) }
 	/DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) }
 
-	/* Catch all unknown sections */
-	.nirvana : { *(*) } > NIRVANA
+	/*
+	 * This is a RTEMS specific section to catch all unexpected input
+	 * sections.  In case you get an error like
+	 *   "section `.unexpected_sections' will not fit in region
+	 *   `UNEXPECTED_SECTIONS'"
+	 * you have to figure out the offending input section and add it to the
+	 * appropriate output section definition above.
+	 */
+	.unexpected_sections : { *(*) } > UNEXPECTED_SECTIONS
 }
