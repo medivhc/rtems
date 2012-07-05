@@ -13,6 +13,9 @@
 
 #include <sys/stat.h>
 
+#include <rtems/blkdev.h>
+#include <rtems/libio.h>
+#include "fs_config.h"
 #include "fstest.h"
 #include "fstest_support.h"
 
@@ -39,6 +42,8 @@ test_shutdown_filesystem (void)
 #define CONFIGURE_USE_IMFS_AS_BASE_FILESYSTEM
 #define CONFIGURE_LIBIO_MAXIMUM_FILE_DESCRIPTORS 40
 #define CONFIGURE_INIT_TASK_STACK_SIZE (16 * 1024)
+
+#define CONFIGURE_APPLICATION_NEEDS_LIBBLOCK
 
 #define CONFIGURE_INIT
 #include <rtems/confdefs.h>

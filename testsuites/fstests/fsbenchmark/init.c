@@ -24,17 +24,20 @@
 #include "fstest.h"
 #include "pmacros.h"
 
+#include <rtems/blkdev.h>
+#include <rtems/bdbuf.h>
+
 static const mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
 
 static const char databuf [] =
-  "Happy days are here again.  Happy days are here again.1Happy "
-  "days are here again.2Happy days are here again.3Happy days are here again."
-  "4Happy days are here again.5Happy days are here again.6Happy days are here "
-  "again.7Happy days are here again.";
+"Happy days are here again.  Happy days are here again.1Happy "
+"days are here again.2Happy days are here again.3Happy days are here again."
+"4Happy days are here again.5Happy days are here again.6Happy days are here "
+"again.7Happy days are here again.";
 
 static const size_t len = sizeof (databuf) - 1;
 
-static void
+  static void
 test_case_enter (const char *wd)
 {
   int status;
@@ -48,7 +51,7 @@ test_case_enter (const char *wd)
   rtems_test_assert (status == 0);
 }
 
-static void
+  static void
 test_case_leave (void)
 {
   int status;
@@ -57,7 +60,7 @@ test_case_leave (void)
   rtems_test_assert (status == 0);
 }
 
-static bool init(const char *device,rtems_disk_device *dd)
+static bool init(const char *device,rtems_disk_device **dd)
 {
   int fd;
   bool ok;
@@ -66,9 +69,8 @@ static bool init(const char *device,rtems_disk_device *dd)
   ok = fd >= 0;
   if (ok) {
     int rv;
-    rv = rtems_disk_fd_get_disk_device(fd, &dd);
+    rv = rtems_disk_fd_get_disk_device(fd, dd);
     ok = rv == 0;
-    }
   }
   return ok;
 }
@@ -77,18 +79,18 @@ static void print_dev_stats(void)
 {
   rtems_disk_device *dd;
   bool is_ok;
+  chroot("/");
 
-  is_ok = init(RAMDISK_PATH,dd);
+  is_ok = init("/",&dd);
   if (is_ok) {
-    
-
+    puts("OK");
+    rtems_blkdev_stats stats;
+    rtems_bdbuf_get_device_stats(dd, &stats);
+    rtems_blkdev_print_stats(&stats, rtems_printf_plugin, NULL);
   }
-  
-
 }
 
-  void
-test ()
+void test ()
 {
   char *file_name = "test_file";
   char *dir_name = "dir";
@@ -132,4 +134,5 @@ test ()
   rtems_test_assert (status == 0);
 
   test_case_leave();
+  print_dev_stats();
 }

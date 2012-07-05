@@ -31,7 +31,6 @@ SUBDIRS += mrfs_fstime
 SUBDIRS += fsnofs01
 SUBDIRS += fsimfsgeneric01
 SUBDIRS += fsbdpart01
-SUBDIRS += imfs_fsbenchmark
 SUBDIRS += mimfs_fsbenchmark
 SUBDIRS += mdosfs_fsbenchmark
 SUBDIRS += mrfs_fsbenchmark
