@@ -309,6 +309,7 @@ typedef struct rtems_bdbuf_group rtems_bdbuf_group;
 typedef struct rtems_bdbuf_buffer
 {
   rtems_chain_node link;       /**< Link the BD onto a number of lists. */
+  rtems_chain_node node;       /**< List  */
 
   struct rtems_bdbuf_avl_node
   {
@@ -334,6 +335,8 @@ typedef struct rtems_bdbuf_buffer
                                   * has been held in the cache modified. */
 
   int   references;              /**< Allow reference counting by owner. */
+
+  uint8_t flags;
   void* user;                    /**< User data. */
 } rtems_bdbuf_buffer;
 
@@ -675,6 +678,46 @@ rtems_bdbuf_get_device_stats (const rtems_disk_device *dd,
 void
 rtems_bdbuf_reset_device_stats (rtems_disk_device *dd);
 
+/**
+ * @brief Init replace policy 
+ */
+rtems_status_code
+rtems_bdbuf_init_policy(void);
+
+/**
+* @brief Get the victim buffer. 
+*
+* @param begin From where to select. Use NULL to start. 
+*
+* @return The victim buffer.
+*/
+rtems_bdbuf_buffer* rtems_bdbuf_select_victim(rtems_bdbuf_buffer *begin);
+
+/**
+* @brief Put the buffer to the queue.
+*
+*/
+void rtems_bdbuf_enqueue(rtems_bdbuf_buffer *bd);
+/**
+* @brief Put the buffer off the queue.
+*
+*/
+void rtems_bdbuf_dequeue(rtems_bdbuf_buffer *bd);
+
+/**
+* @brief 
+*
+*/
+bool rtems_bdbuf_isqueued(rtems_bdbuf_buffer *bd);
+
+#define BUF_PRIVATE1 0x01
+#define BUF_PRIVATE2 0x02
+#define BUF_PRIVATE3 0x04
+#define BUF_PRIVATE4 0x08
+#define BUF_PRIVATE5 0x10
+#define BUF_PRIVATE6 0x20
+#define BUF_PRIVATE7 0x40
+#define BUF_PRIVATE8 0x80
 /** @} */
 
 #ifdef __cplusplus

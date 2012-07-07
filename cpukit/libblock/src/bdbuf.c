@@ -118,7 +118,7 @@ typedef struct rtems_bdbuf_cache
 
   rtems_bdbuf_buffer* tree;              /**< Buffer descriptor lookup AVL tree
                                           * root. There is only one. */
-  rtems_chain_control free_list;               /**< Least recently used list */
+  rtems_chain_control free_list;         /**< Free list */
   rtems_chain_control modified;          /**< Modified buffers list */
   rtems_chain_control sync;              /**< Buffers to sync list */
 
@@ -236,7 +236,7 @@ static rtems_bdbuf_cache bdbuf_cache;
 /**
  * If true output the trace message.
  */
-bool rtems_bdbuf_tracer;
+bool rtems_bdbuf_tracer =true;
 
 /**
  * Return the number of items on the list.
@@ -270,9 +270,11 @@ rtems_bdbuf_show_usage (void)
   for (group = 0; group < bdbuf_cache.group_count; group++)
     total += bdbuf_cache.groups[group].users;
   printf ("bdbuf:group users=%lu", total);
+#if 0
   val = rtems_bdbuf_list_count (&bdbuf_cache.lru);
   printf (", lru=%lu", val);
   total = val;
+#endif 
   val = rtems_bdbuf_list_count (&bdbuf_cache.modified);
   printf (", mod=%lu", val);
   total += val;
@@ -1042,7 +1044,7 @@ rtems_bdbuf_remove_from_tree (rtems_bdbuf_buffer *bd)
 }
 
 static void
-rtems_bdbuf_remove_from_tree_and_lru_list (rtems_bdbuf_buffer *bd)
+rtems_bdbuf_remove_from_tree_and_queue (rtems_bdbuf_buffer *bd)
 {
   switch (bd->state)
   {
@@ -1051,7 +1053,7 @@ rtems_bdbuf_remove_from_tree_and_lru_list (rtems_bdbuf_buffer *bd)
       break;
     case RTEMS_BDBUF_STATE_CACHED:
       //rtems_bdbuf_remove_from_tree (bd);
-      dequeue(bd);
+      rtems_bdbuf_dequeue(bd);
       break;
     default:
       rtems_bdbuf_fatal (bd->state, RTEMS_BLKDEV_FATAL_BDBUF_STATE_10);
@@ -1060,7 +1062,7 @@ rtems_bdbuf_remove_from_tree_and_lru_list (rtems_bdbuf_buffer *bd)
 }
 
 static void
-rtems_bdbuf_make_free_and_add_to_lru_list (rtems_bdbuf_buffer *bd)
+rtems_bdbuf_make_free_and_add_to_queue (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_FREE);
   rtems_chain_prepend_unprotected (&bdbuf_cache.free_list, &bd->link);
@@ -1073,11 +1075,12 @@ rtems_bdbuf_make_empty (rtems_bdbuf_buffer *bd)
 }
 
 static void
-rtems_bdbuf_make_cached_and_add_to_lru_list (rtems_bdbuf_buffer *bd)
+rtems_bdbuf_make_cached_and_add_to_queue (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_CACHED);
   //rtems_chain_append_unprotected (&bdbuf_cache.lru, &bd->link);
-  enqueue(bd);
+  rtems_bdbuf_enqueue(bd);
+>>>>>>> bdbuf_api
 }
 
 static void
@@ -1088,7 +1091,7 @@ rtems_bdbuf_discard_buffer (rtems_bdbuf_buffer *bd)
   if (bd->waiters == 0)
   {
     rtems_bdbuf_remove_from_tree (bd);
-    rtems_bdbuf_make_free_and_add_to_lru_list (bd);
+    rtems_bdbuf_make_free_and_add_to_queue (bd);
   }
 }
 
@@ -1133,10 +1136,10 @@ rtems_bdbuf_add_to_modified_list_after_access (rtems_bdbuf_buffer *bd)
 }
 
 static void
-rtems_bdbuf_add_to_lru_list_after_access (rtems_bdbuf_buffer *bd)
+rtems_bdbuf_add_to_queue_after_access (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_group_release (bd);
-  rtems_bdbuf_make_cached_and_add_to_lru_list (bd);
+  rtems_bdbuf_make_cached_and_add_to_queue (bd);
 
   if (bd->waiters)
     rtems_bdbuf_wake (&bdbuf_cache.access_waiters);
@@ -1206,7 +1209,7 @@ rtems_bdbuf_group_realloc (rtems_bdbuf_group* group, size_t new_bds_per_group)
   for (b = 0, bd = group->bdbuf;
        b < group->bds_per_group;
        b++, bd += bufs_per_bd)
-    rtems_bdbuf_remove_from_tree_and_lru_list (bd);
+    rtems_bdbuf_remove_from_tree_and_queue (bd);
 
   group->bds_per_group = new_bds_per_group;
   bufs_per_bd = bdbuf_cache.max_bds_per_group / new_bds_per_group;
@@ -1214,7 +1217,7 @@ rtems_bdbuf_group_realloc (rtems_bdbuf_group* group, size_t new_bds_per_group)
   for (b = 1, bd = group->bdbuf + bufs_per_bd;
        b < group->bds_per_group;
        b++, bd += bufs_per_bd)
-    rtems_bdbuf_make_free_and_add_to_lru_list (bd);
+    rtems_bdbuf_make_free_and_add_to_queue (bd);
 
   if (b > 1)
     rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
@@ -1240,14 +1243,15 @@ rtems_bdbuf_setup_empty_buffer (rtems_bdbuf_buffer *bd,
 }
 
 static rtems_bdbuf_buffer *
-rtems_bdbuf_get_buffer_from_lru_list (rtems_disk_device *dd,
+rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
                                       rtems_blkdev_bnum  block)
 {
-  rtems_chain_node *node = rtems_chain_first (&bdbuf_cache.lru);
 
-  while (!rtems_chain_is_tail (&bdbuf_cache.lru, node))
+
+  rtems_bdbuf_buffer *bd = NULL;
+  while ((bd = rtems_bdbuf_select_victim(bd)) !=  NULL)
   {
-    rtems_bdbuf_buffer *bd = (rtems_bdbuf_buffer *) node;
+
     rtems_bdbuf_buffer *empty_bd = NULL;
 
     if (rtems_bdbuf_tracer)
@@ -1263,8 +1267,7 @@ rtems_bdbuf_get_buffer_from_lru_list (rtems_disk_device *dd,
     {
       if (bd->group->bds_per_group == dd->bds_per_group)
       {
-        rtems_bdbuf_remove_from_tree_and_lru_list (bd);
-
+        rtems_bdbuf_remove_from_tree_and_queue (bd);
         empty_bd = bd;
       }
       else if (bd->group->users == 0)
@@ -1278,7 +1281,6 @@ rtems_bdbuf_get_buffer_from_lru_list (rtems_disk_device *dd,
       return empty_bd;
     }
 
-    node = rtems_chain_next (node);
   }
 
   return NULL;
@@ -1367,7 +1369,6 @@ rtems_bdbuf_init (void)
   bdbuf_cache.sync_device = BDBUF_INVALID_DEV;
 
   rtems_chain_initialize_empty (&bdbuf_cache.swapout_workers);
-  rtems_chain_initialize_empty (&bdbuf_cache.lru);
   rtems_chain_initialize_empty (&bdbuf_cache.modified);
   rtems_chain_initialize_empty (&bdbuf_cache.sync);
   rtems_chain_initialize_empty (&bdbuf_cache.read_ahead_chain);
@@ -1445,6 +1446,9 @@ rtems_bdbuf_init (void)
                       bdbuf_cache.buffer_min_count * bdbuf_config.buffer_min) != 0)
     goto error;
 
+  sc = rtems_bdbuf_init_policy();
+  if (sc != RTEMS_SUCCESSFUL)
+    goto error; 
   /*
    * The cache is empty after opening so we need to add all the buffers to it
    * and initialise the groups.
@@ -1504,6 +1508,7 @@ rtems_bdbuf_init (void)
     if (sc != RTEMS_SUCCESSFUL)
       goto error;
   }
+  
 
   rtems_bdbuf_unlock_cache ();
 
@@ -1561,9 +1566,11 @@ rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
     {
       case RTEMS_BDBUF_STATE_MODIFIED:
         rtems_bdbuf_group_release (bd);
+        rtems_chain_extract_unprotected (&bd->link);
         /* Fall through */
       case RTEMS_BDBUF_STATE_CACHED:
-        rtems_chain_extract_unprotected (&bd->link);
+  //      rtems_chain_extract_unprotected (&bd->link);
+        rtems_bdbuf_dequeue(bd);
         /* Fall through */
       case RTEMS_BDBUF_STATE_EMPTY:
         return;
@@ -1701,7 +1708,7 @@ rtems_bdbuf_sync_after_access (rtems_bdbuf_buffer *bd)
     if (bd->state == RTEMS_BDBUF_STATE_EMPTY)
     {
       rtems_bdbuf_remove_from_tree (bd);
-      rtems_bdbuf_make_free_and_add_to_lru_list (bd);
+      rtems_bdbuf_make_free_and_add_to_queue (bd);
     }
     rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
   }
@@ -1717,7 +1724,7 @@ rtems_bdbuf_get_buffer_for_read_ahead (rtems_disk_device *dd,
 
   if (bd == NULL)
   {
-    bd = rtems_bdbuf_get_buffer_from_lru_list (dd, block);
+    bd = rtmes_bdbuf_get_buffer_from_queue (dd, block);
 
     if (bd != NULL)
       rtems_bdbuf_group_obtain (bd);
@@ -1748,8 +1755,8 @@ rtems_bdbuf_get_buffer_for_access (rtems_disk_device *dd,
       {
         if (rtems_bdbuf_wait_for_recycle (bd))
         {
-          rtems_bdbuf_remove_from_tree_and_lru_list (bd);
-          rtems_bdbuf_make_free_and_add_to_lru_list (bd);
+          rtems_bdbuf_remove_from_tree_and_queue (bd);
+          rtems_bdbuf_make_free_and_add_to_queue (bd);
           rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
         }
         bd = NULL;
@@ -1757,7 +1764,7 @@ rtems_bdbuf_get_buffer_for_access (rtems_disk_device *dd,
     }
     else
     {
-      bd = rtems_bdbuf_get_buffer_from_lru_list (dd, block);
+      bd = rtmes_bdbuf_get_buffer_from_queue (dd, block);
 
       if (bd == NULL)
         rtems_bdbuf_wait_for_buffer ();
@@ -1928,7 +1935,7 @@ rtems_bdbuf_execute_transfer_request (rtems_disk_device    *dd,
     rtems_bdbuf_group_release (bd);
 
     if (sc == RTEMS_SUCCESSFUL && bd->state == RTEMS_BDBUF_STATE_TRANSFER)
-      rtems_bdbuf_make_cached_and_add_to_lru_list (bd);
+      rtems_bdbuf_make_cached_and_add_to_queue (bd);
     else
       rtems_bdbuf_discard_buffer (bd);
 
@@ -2103,7 +2110,8 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
         if (sc == RTEMS_SUCCESSFUL)
         {
           rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_CACHED);
-          rtems_chain_extract_unprotected (&bd->link);
+          rtems_bdbuf_dequeue(bd);
+          //rtems_chain_extract_unprotected (&bd->link);
           rtems_bdbuf_group_obtain (bd);
         }
         else
@@ -2119,7 +2127,8 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
     rtems_bdbuf_check_read_ahead_trigger (dd, block);
   }
 
-  rtems_bdbuf_unlock_cache ();
+    rtems_bdbuf_unlock_cache ();
+
 
   *bd_ptr = bd;
 
@@ -2153,7 +2162,7 @@ rtems_bdbuf_release (rtems_bdbuf_buffer *bd)
   switch (bd->state)
   {
     case RTEMS_BDBUF_STATE_ACCESS_CACHED:
-      rtems_bdbuf_add_to_lru_list_after_access (bd);
+      rtems_bdbuf_add_to_queue_after_access (bd);
       break;
     case RTEMS_BDBUF_STATE_ACCESS_EMPTY:
     case RTEMS_BDBUF_STATE_ACCESS_PURGED:
@@ -2881,10 +2890,11 @@ rtems_bdbuf_gather_for_purge (rtems_chain_control *purge_list,
           rtems_bdbuf_wake (&bdbuf_cache.transfer_waiters);
           /* Fall through */
         case RTEMS_BDBUF_STATE_MODIFIED:
+          rtems_chain_extract_unprotected(&cur->link);
           rtems_bdbuf_group_release (cur);
           /* Fall through */
         case RTEMS_BDBUF_STATE_CACHED:
-          rtems_chain_extract_unprotected (&cur->link);
+          rtems_bdbuf_dequeue(cur);
           rtems_chain_append_unprotected (purge_list, &cur->link);
           break;
         case RTEMS_BDBUF_STATE_TRANSFER:

@@ -3,6 +3,7 @@ include $(top_srcdir)/automake/compile.am
 
 noinst_LIBRARIES = libblock.a
 libblock_a_SOURCES = src/bdbuf.c \
+    src/bdbuf-lru.c \
     src/blkdev.c \
     src/blkdev-imfs.c \
     src/blkdev-ioctl.c \
