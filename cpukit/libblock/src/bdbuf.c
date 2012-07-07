@@ -118,7 +118,7 @@ typedef struct rtems_bdbuf_cache
 
   rtems_bdbuf_buffer* tree;              /**< Buffer descriptor lookup AVL tree
                                           * root. There is only one. */
-  rtems_chain_control lru;               /**< Least recently used list */
+  rtems_chain_control free_list;               /**< Least recently used list */
   rtems_chain_control modified;          /**< Modified buffers list */
   rtems_chain_control sync;              /**< Buffers to sync list */
 
@@ -1047,22 +1047,23 @@ rtems_bdbuf_remove_from_tree_and_lru_list (rtems_bdbuf_buffer *bd)
   switch (bd->state)
   {
     case RTEMS_BDBUF_STATE_FREE:
+      rtems_chain_extract_unprotected (&bd->link);
       break;
     case RTEMS_BDBUF_STATE_CACHED:
-      rtems_bdbuf_remove_from_tree (bd);
+      //rtems_bdbuf_remove_from_tree (bd);
+      dequeue(bd);
       break;
     default:
       rtems_bdbuf_fatal (bd->state, RTEMS_BLKDEV_FATAL_BDBUF_STATE_10);
   }
 
-  rtems_chain_extract_unprotected (&bd->link);
 }
 
 static void
 rtems_bdbuf_make_free_and_add_to_lru_list (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_FREE);
-  rtems_chain_prepend_unprotected (&bdbuf_cache.lru, &bd->link);
+  rtems_chain_prepend_unprotected (&bdbuf_cache.free_list, &bd->link);
 }
 
 static void
@@ -1075,7 +1076,8 @@ static void
 rtems_bdbuf_make_cached_and_add_to_lru_list (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_CACHED);
-  rtems_chain_append_unprotected (&bdbuf_cache.lru, &bd->link);
+  //rtems_chain_append_unprotected (&bdbuf_cache.lru, &bd->link);
+  enqueue(bd);
 }
 
 static void
@@ -1456,7 +1458,7 @@ rtems_bdbuf_init (void)
     bd->group  = group;
     bd->buffer = buffer;
 
-    rtems_chain_append_unprotected (&bdbuf_cache.lru, &bd->link);
+    rtems_chain_append_unprotected (&bdbuf_cache.free_list, &bd->link);
 
     if ((b % bdbuf_cache.max_bds_per_group) ==
         (bdbuf_cache.max_bds_per_group - 1))
