@@ -1052,7 +1052,7 @@ rtems_bdbuf_remove_from_tree_and_queue (rtems_bdbuf_buffer *bd)
       rtems_chain_extract_unprotected (&bd->link);
       break;
     case RTEMS_BDBUF_STATE_CACHED:
-      //rtems_bdbuf_remove_from_tree (bd);
+      rtems_bdbuf_remove_from_tree (bd);
       rtems_bdbuf_dequeue(bd);
       break;
     default:
@@ -1062,7 +1062,7 @@ rtems_bdbuf_remove_from_tree_and_queue (rtems_bdbuf_buffer *bd)
 }
 
 static void
-rtems_bdbuf_make_free_and_add_to_queue (rtems_bdbuf_buffer *bd)
+rtems_bdbuf_make_free_and_add_to_free_list (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_FREE);
   rtems_chain_prepend_unprotected (&bdbuf_cache.free_list, &bd->link);
@@ -1077,10 +1077,8 @@ rtems_bdbuf_make_empty (rtems_bdbuf_buffer *bd)
 static void
 rtems_bdbuf_make_cached_and_add_to_queue (rtems_bdbuf_buffer *bd)
 {
-  rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_CACHED);
-  //rtems_chain_append_unprotected (&bdbuf_cache.lru, &bd->link);
   rtems_bdbuf_enqueue(bd);
->>>>>>> bdbuf_api
+  rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_CACHED);
 }
 
 static void
@@ -1091,7 +1089,7 @@ rtems_bdbuf_discard_buffer (rtems_bdbuf_buffer *bd)
   if (bd->waiters == 0)
   {
     rtems_bdbuf_remove_from_tree (bd);
-    rtems_bdbuf_make_free_and_add_to_queue (bd);
+    rtems_bdbuf_make_free_and_add_to_free_list (bd);
   }
 }
 
@@ -1217,7 +1215,7 @@ rtems_bdbuf_group_realloc (rtems_bdbuf_group* group, size_t new_bds_per_group)
   for (b = 1, bd = group->bdbuf + bufs_per_bd;
        b < group->bds_per_group;
        b++, bd += bufs_per_bd)
-    rtems_bdbuf_make_free_and_add_to_queue (bd);
+    rtems_bdbuf_make_free_and_add_to_free_list (bd);
 
   if (b > 1)
     rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
@@ -1241,24 +1239,17 @@ rtems_bdbuf_setup_empty_buffer (rtems_bdbuf_buffer *bd,
 
   rtems_bdbuf_make_empty (bd);
 }
-
-static rtems_bdbuf_buffer *
-rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
-                                      rtems_blkdev_bnum  block)
+static rtems_bdbuf_buffer *rtems_bdbuf_check_and_realloc(rtems_bdbuf_buffer *bd,
+    rtems_disk_device  *dd,
+    rtems_blkdev_bnum block)
 {
-
-
-  rtems_bdbuf_buffer *bd = NULL;
-  while ((bd = rtems_bdbuf_select_victim(bd)) !=  NULL)
-  {
-
     rtems_bdbuf_buffer *empty_bd = NULL;
 
     if (rtems_bdbuf_tracer)
       printf ("bdbuf:next-bd: %tu (%td:%" PRId32 ") %zd -> %zd\n",
-              bd - bdbuf_cache.bds,
-              bd->group - bdbuf_cache.groups, bd->group->users,
-              bd->group->bds_per_group, dd->bds_per_group);
+          bd - bdbuf_cache.bds,
+          bd->group - bdbuf_cache.groups, bd->group->users,
+          bd->group->bds_per_group, dd->bds_per_group);
 
     /*
      * If nobody waits for this BD, we may recycle it.
@@ -1280,21 +1271,57 @@ rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
 
       return empty_bd;
     }
+    return NULL;
 
+}
+
+static rtems_bdbuf_buffer *
+rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
+                                      rtems_blkdev_bnum  block)
+{
+
+
+  rtems_bdbuf_buffer *bd = NULL;
+  rtems_bdbuf_buffer *empty_bd = NULL;
+
+  /*
+   * Check if the buffer in the free list 
+   */
+  rtems_chain_node *chain_node = rtems_chain_first (&bdbuf_cache.free_list);
+  if (!rtems_chain_is_tail (&bdbuf_cache.free_list,chain_node)) {
+    bd =  (rtems_bdbuf_buffer *) chain_node;
+    empty_bd = rtems_bdbuf_check_and_realloc (bd,dd,block);
+    if (empty_bd != NULL)
+      return empty_bd;
+  }
+  while ((bd = rtems_bdbuf_select_victim(empty_bd)) != NULL) {
+    empty_bd = rtems_bdbuf_check_and_realloc (bd,dd,block);
+    if (empty_bd!=NULL) {
+      return empty_bd;
+    } else {
+      chain_node = rtems_chain_first (&bdbuf_cache.free_list);
+      if (!rtems_chain_is_tail (&bdbuf_cache.free_list,chain_node)) {
+        bd =  (rtems_bdbuf_buffer *) chain_node;
+        empty_bd = rtems_bdbuf_check_and_realloc (bd,dd,block);
+        if (empty_bd != NULL)
+          return empty_bd;
+      }
+      empty_bd = bd;
+    }
   }
 
   return NULL;
 }
 
-static rtems_status_code
+  static rtems_status_code
 rtems_bdbuf_create_task(
-  rtems_name name,
-  rtems_task_priority priority,
-  rtems_task_priority default_priority,
-  rtems_task_entry entry,
-  rtems_task_argument arg,
-  rtems_id *id
-)
+    rtems_name name,
+    rtems_task_priority priority,
+    rtems_task_priority default_priority,
+    rtems_task_entry entry,
+    rtems_task_argument arg,
+    rtems_id *id
+    )
 {
   rtems_status_code sc;
   size_t stack_size = bdbuf_config.task_stack_size ?
@@ -1303,11 +1330,11 @@ rtems_bdbuf_create_task(
   priority = priority != 0 ? priority : default_priority;
 
   sc = rtems_task_create (name,
-                          priority,
-                          stack_size,
-                          RTEMS_PREEMPT | RTEMS_NO_TIMESLICE | RTEMS_NO_ASR,
-                          RTEMS_LOCAL | RTEMS_NO_FLOATING_POINT,
-                          id);
+      priority,
+      stack_size,
+      RTEMS_PREEMPT | RTEMS_NO_TIMESLICE | RTEMS_NO_ASR,
+      RTEMS_LOCAL | RTEMS_NO_FLOATING_POINT,
+      id);
 
   if (sc == RTEMS_SUCCESSFUL)
     sc = rtems_task_start (*id, entry, arg);
@@ -1320,7 +1347,7 @@ rtems_bdbuf_create_task(
  *
  * @return rtems_status_code The initialisation status.
  */
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_init (void)
 {
   rtems_bdbuf_group*  group;
@@ -1369,6 +1396,7 @@ rtems_bdbuf_init (void)
   bdbuf_cache.sync_device = BDBUF_INVALID_DEV;
 
   rtems_chain_initialize_empty (&bdbuf_cache.swapout_workers);
+  rtems_chain_initialize_empty (&bdbuf_cache.free_list);
   rtems_chain_initialize_empty (&bdbuf_cache.modified);
   rtems_chain_initialize_empty (&bdbuf_cache.sync);
   rtems_chain_initialize_empty (&bdbuf_cache.read_ahead_chain);
@@ -1377,34 +1405,34 @@ rtems_bdbuf_init (void)
    * Create the locks for the cache.
    */
   sc = rtems_semaphore_create (rtems_build_name ('B', 'D', 'C', 'l'),
-                               1, RTEMS_BDBUF_CACHE_LOCK_ATTRIBS, 0,
-                               &bdbuf_cache.lock);
+      1, RTEMS_BDBUF_CACHE_LOCK_ATTRIBS, 0,
+      &bdbuf_cache.lock);
   if (sc != RTEMS_SUCCESSFUL)
     goto error;
 
   rtems_bdbuf_lock_cache ();
 
   sc = rtems_semaphore_create (rtems_build_name ('B', 'D', 'C', 's'),
-                               1, RTEMS_BDBUF_CACHE_LOCK_ATTRIBS, 0,
-                               &bdbuf_cache.sync_lock);
+      1, RTEMS_BDBUF_CACHE_LOCK_ATTRIBS, 0,
+      &bdbuf_cache.sync_lock);
   if (sc != RTEMS_SUCCESSFUL)
     goto error;
 
   sc = rtems_semaphore_create (rtems_build_name ('B', 'D', 'C', 'a'),
-                               0, RTEMS_BDBUF_CACHE_WAITER_ATTRIBS, 0,
-                               &bdbuf_cache.access_waiters.sema);
+      0, RTEMS_BDBUF_CACHE_WAITER_ATTRIBS, 0,
+      &bdbuf_cache.access_waiters.sema);
   if (sc != RTEMS_SUCCESSFUL)
     goto error;
 
   sc = rtems_semaphore_create (rtems_build_name ('B', 'D', 'C', 't'),
-                               0, RTEMS_BDBUF_CACHE_WAITER_ATTRIBS, 0,
-                               &bdbuf_cache.transfer_waiters.sema);
+      0, RTEMS_BDBUF_CACHE_WAITER_ATTRIBS, 0,
+      &bdbuf_cache.transfer_waiters.sema);
   if (sc != RTEMS_SUCCESSFUL)
     goto error;
 
   sc = rtems_semaphore_create (rtems_build_name ('B', 'D', 'C', 'b'),
-                               0, RTEMS_BDBUF_CACHE_WAITER_ATTRIBS, 0,
-                               &bdbuf_cache.buffer_waiters.sema);
+      0, RTEMS_BDBUF_CACHE_WAITER_ATTRIBS, 0,
+      &bdbuf_cache.buffer_waiters.sema);
   if (sc != RTEMS_SUCCESSFUL)
     goto error;
 
@@ -1422,7 +1450,7 @@ rtems_bdbuf_init (void)
    * Allocate the memory for the buffer descriptors.
    */
   bdbuf_cache.bds = calloc (sizeof (rtems_bdbuf_buffer),
-                            bdbuf_cache.buffer_min_count);
+      bdbuf_cache.buffer_min_count);
   if (!bdbuf_cache.bds)
     goto error;
 
@@ -1430,7 +1458,7 @@ rtems_bdbuf_init (void)
    * Allocate the memory for the buffer descriptors.
    */
   bdbuf_cache.groups = calloc (sizeof (rtems_bdbuf_group),
-                               bdbuf_cache.group_count);
+      bdbuf_cache.group_count);
   if (!bdbuf_cache.groups)
     goto error;
 
@@ -1442,8 +1470,8 @@ rtems_bdbuf_init (void)
    * The memory allocate allows a
    */
   if (rtems_memalign ((void **) &bdbuf_cache.buffers,
-                      cache_aligment,
-                      bdbuf_cache.buffer_min_count * bdbuf_config.buffer_min) != 0)
+        cache_aligment,
+        bdbuf_cache.buffer_min_count * bdbuf_config.buffer_min) != 0)
     goto error;
 
   sc = rtems_bdbuf_init_policy();
@@ -1454,9 +1482,9 @@ rtems_bdbuf_init (void)
    * and initialise the groups.
    */
   for (b = 0, group = bdbuf_cache.groups,
-         bd = bdbuf_cache.bds, buffer = bdbuf_cache.buffers;
-       b < bdbuf_cache.buffer_min_count;
-       b++, bd++, buffer += bdbuf_config.buffer_min)
+      bd = bdbuf_cache.bds, buffer = bdbuf_cache.buffers;
+      b < bdbuf_cache.buffer_min_count;
+      b++, bd++, buffer += bdbuf_config.buffer_min)
   {
     bd->dd    = BDBUF_INVALID_DEV;
     bd->group  = group;
@@ -1470,12 +1498,12 @@ rtems_bdbuf_init (void)
   }
 
   for (b = 0,
-         group = bdbuf_cache.groups,
-         bd = bdbuf_cache.bds;
-       b < bdbuf_cache.group_count;
-       b++,
-         group++,
-         bd += bdbuf_cache.max_bds_per_group)
+      group = bdbuf_cache.groups,
+      bd = bdbuf_cache.bds;
+      b < bdbuf_cache.group_count;
+      b++,
+      group++,
+      bd += bdbuf_cache.max_bds_per_group)
   {
     group->bds_per_group = bdbuf_cache.max_bds_per_group;
     group->bdbuf = bd;
@@ -1488,11 +1516,11 @@ rtems_bdbuf_init (void)
   bdbuf_cache.swapout_enabled = true;
 
   sc = rtems_bdbuf_create_task (rtems_build_name('B', 'S', 'W', 'P'),
-                                bdbuf_config.swapout_priority,
-                                RTEMS_BDBUF_SWAPOUT_TASK_PRIORITY_DEFAULT,
-                                rtems_bdbuf_swapout_task,
-                                0,
-                                &bdbuf_cache.swapout);
+      bdbuf_config.swapout_priority,
+      RTEMS_BDBUF_SWAPOUT_TASK_PRIORITY_DEFAULT,
+      rtems_bdbuf_swapout_task,
+      0,
+      &bdbuf_cache.swapout);
   if (sc != RTEMS_SUCCESSFUL)
     goto error;
 
@@ -1500,15 +1528,15 @@ rtems_bdbuf_init (void)
   {
     bdbuf_cache.read_ahead_enabled = true;
     sc = rtems_bdbuf_create_task (rtems_build_name('B', 'R', 'D', 'A'),
-                                  bdbuf_config.read_ahead_priority,
-                                  RTEMS_BDBUF_READ_AHEAD_TASK_PRIORITY_DEFAULT,
-                                  rtems_bdbuf_read_ahead_task,
-                                  0,
-                                  &bdbuf_cache.read_ahead_task);
+        bdbuf_config.read_ahead_priority,
+        RTEMS_BDBUF_READ_AHEAD_TASK_PRIORITY_DEFAULT,
+        rtems_bdbuf_read_ahead_task,
+        0,
+        &bdbuf_cache.read_ahead_task);
     if (sc != RTEMS_SUCCESSFUL)
       goto error;
   }
-  
+
 
   rtems_bdbuf_unlock_cache ();
 
@@ -1542,22 +1570,22 @@ error:
   return RTEMS_UNSATISFIED;
 }
 
-static void
+  static void
 rtems_bdbuf_wait_for_event (rtems_event_set event)
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
   rtems_event_set   out = 0;
 
   sc = rtems_event_receive (event,
-                            RTEMS_EVENT_ALL | RTEMS_WAIT,
-                            RTEMS_NO_TIMEOUT,
-                            &out);
+      RTEMS_EVENT_ALL | RTEMS_WAIT,
+      RTEMS_NO_TIMEOUT,
+      &out);
 
   if (sc != RTEMS_SUCCESSFUL || out != event)
     rtems_fatal_error_occurred (RTEMS_BLKDEV_FATAL_BDBUF_WAIT_EVNT);
 }
 
-static void
+  static void
 rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
 {
   while (true)
@@ -1568,8 +1596,8 @@ rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
         rtems_bdbuf_group_release (bd);
         rtems_chain_extract_unprotected (&bd->link);
         /* Fall through */
+        return;
       case RTEMS_BDBUF_STATE_CACHED:
-  //      rtems_chain_extract_unprotected (&bd->link);
         rtems_bdbuf_dequeue(bd);
         /* Fall through */
       case RTEMS_BDBUF_STATE_EMPTY:
@@ -1591,7 +1619,7 @@ rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
   }
 }
 
-static void
+  static void
 rtems_bdbuf_request_sync_for_modified_buffer (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_SYNC);
@@ -1606,7 +1634,7 @@ rtems_bdbuf_request_sync_for_modified_buffer (rtems_bdbuf_buffer *bd)
  * @retval @c true Buffer is valid and may be recycled.
  * @retval @c false Buffer is invalid and has to searched again.
  */
-static bool
+  static bool
 rtems_bdbuf_wait_for_recycle (rtems_bdbuf_buffer *bd)
 {
   while (true)
@@ -1650,7 +1678,7 @@ rtems_bdbuf_wait_for_recycle (rtems_bdbuf_buffer *bd)
   }
 }
 
-static void
+  static void
 rtems_bdbuf_wait_for_sync_done (rtems_bdbuf_buffer *bd)
 {
   while (true)
@@ -1676,7 +1704,7 @@ rtems_bdbuf_wait_for_sync_done (rtems_bdbuf_buffer *bd)
   }
 }
 
-static void
+  static void
 rtems_bdbuf_wait_for_buffer (void)
 {
   if (!rtems_chain_is_empty (&bdbuf_cache.modified))
@@ -1685,7 +1713,7 @@ rtems_bdbuf_wait_for_buffer (void)
   rtems_bdbuf_anonymous_wait (&bdbuf_cache.buffer_waiters);
 }
 
-static void
+  static void
 rtems_bdbuf_sync_after_access (rtems_bdbuf_buffer *bd)
 {
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_SYNC);
@@ -1702,21 +1730,21 @@ rtems_bdbuf_sync_after_access (rtems_bdbuf_buffer *bd)
    * We may have created a cached or empty buffer which may be recycled.
    */
   if (bd->waiters == 0
-        && (bd->state == RTEMS_BDBUF_STATE_CACHED
-          || bd->state == RTEMS_BDBUF_STATE_EMPTY))
+      && (bd->state == RTEMS_BDBUF_STATE_CACHED
+        || bd->state == RTEMS_BDBUF_STATE_EMPTY))
   {
     if (bd->state == RTEMS_BDBUF_STATE_EMPTY)
     {
       rtems_bdbuf_remove_from_tree (bd);
-      rtems_bdbuf_make_free_and_add_to_queue (bd);
+      rtems_bdbuf_make_free_and_add_to_free_list (bd);
     }
     rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
   }
 }
 
-static rtems_bdbuf_buffer *
+  static rtems_bdbuf_buffer *
 rtems_bdbuf_get_buffer_for_read_ahead (rtems_disk_device *dd,
-                                       rtems_blkdev_bnum  block)
+    rtems_blkdev_bnum  block)
 {
   rtems_bdbuf_buffer *bd = NULL;
 
@@ -1739,9 +1767,9 @@ rtems_bdbuf_get_buffer_for_read_ahead (rtems_disk_device *dd,
   return bd;
 }
 
-static rtems_bdbuf_buffer *
+  static rtems_bdbuf_buffer *
 rtems_bdbuf_get_buffer_for_access (rtems_disk_device *dd,
-                                   rtems_blkdev_bnum  block)
+    rtems_blkdev_bnum  block)
 {
   rtems_bdbuf_buffer *bd = NULL;
 
@@ -1756,7 +1784,7 @@ rtems_bdbuf_get_buffer_for_access (rtems_disk_device *dd,
         if (rtems_bdbuf_wait_for_recycle (bd))
         {
           rtems_bdbuf_remove_from_tree_and_queue (bd);
-          rtems_bdbuf_make_free_and_add_to_queue (bd);
+          rtems_bdbuf_make_free_and_add_to_free_list (bd);
           rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
         }
         bd = NULL;
@@ -1778,10 +1806,10 @@ rtems_bdbuf_get_buffer_for_access (rtems_disk_device *dd,
   return bd;
 }
 
-static rtems_status_code
+  static rtems_status_code
 rtems_bdbuf_get_media_block (const rtems_disk_device *dd,
-                             rtems_blkdev_bnum        block,
-                             rtems_blkdev_bnum       *media_block_ptr)
+    rtems_blkdev_bnum        block,
+    rtems_blkdev_bnum       *media_block_ptr)
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
 
@@ -1802,10 +1830,10 @@ rtems_bdbuf_get_media_block (const rtems_disk_device *dd,
   return sc;
 }
 
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_get (rtems_disk_device   *dd,
-                 rtems_blkdev_bnum    block,
-                 rtems_bdbuf_buffer **bd_ptr)
+    rtems_blkdev_bnum    block,
+    rtems_bdbuf_buffer **bd_ptr)
 {
   rtems_status_code   sc = RTEMS_SUCCESSFUL;
   rtems_bdbuf_buffer *bd = NULL;
@@ -1821,7 +1849,7 @@ rtems_bdbuf_get (rtems_disk_device   *dd,
      */
     if (rtems_bdbuf_tracer)
       printf ("bdbuf:get: %" PRIu32 " (%" PRIu32 ") (dev = %08x)\n",
-              media_block, block, (unsigned) dd->dev);
+          media_block, block, (unsigned) dd->dev);
 
     bd = rtems_bdbuf_get_buffer_for_access (dd, media_block);
 
@@ -1871,7 +1899,7 @@ rtems_bdbuf_get (rtems_disk_device   *dd,
  *            block device request structure).
  * @param status I/O completion status
  */
-static void
+  static void
 rtems_bdbuf_transfer_done (void* arg, rtems_status_code status)
 {
   rtems_blkdev_request* req = (rtems_blkdev_request*) arg;
@@ -1881,10 +1909,10 @@ rtems_bdbuf_transfer_done (void* arg, rtems_status_code status)
   rtems_event_send (req->io_task, RTEMS_BDBUF_TRANSFER_SYNC);
 }
 
-static rtems_status_code
+  static rtems_status_code
 rtems_bdbuf_execute_transfer_request (rtems_disk_device    *dd,
-                                      rtems_blkdev_request *req,
-                                      bool                  cache_locked)
+    rtems_blkdev_request *req,
+    bool                  cache_locked)
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
   int result = 0;
@@ -1958,10 +1986,10 @@ rtems_bdbuf_execute_transfer_request (rtems_disk_device    *dd,
     return RTEMS_IO_ERROR;
 }
 
-static rtems_status_code
+  static rtems_status_code
 rtems_bdbuf_execute_read_request (rtems_disk_device  *dd,
-                                  rtems_bdbuf_buffer *bd,
-                                  uint32_t            transfer_count)
+    rtems_bdbuf_buffer *bd,
+    uint32_t            transfer_count)
 {
   rtems_blkdev_request *req = NULL;
   rtems_blkdev_bnum media_block = bd->block;
@@ -1975,7 +2003,7 @@ rtems_bdbuf_execute_read_request (rtems_disk_device  *dd,
 #define bdbuf_alloc(size) __builtin_alloca (size)
 
   req = bdbuf_alloc (sizeof (rtems_blkdev_request) +
-                     sizeof (rtems_blkdev_sg_buffer) * transfer_count);
+      sizeof (rtems_blkdev_sg_buffer) * transfer_count);
 
   req->req = RTEMS_BLKDEV_REQ_READ;
   req->req_done = rtems_bdbuf_transfer_done;
@@ -2021,13 +2049,13 @@ rtems_bdbuf_execute_read_request (rtems_disk_device  *dd,
   return rtems_bdbuf_execute_transfer_request (dd, req, true);
 }
 
-static bool
+  static bool
 rtems_bdbuf_is_read_ahead_active (const rtems_disk_device *dd)
 {
   return !rtems_chain_is_node_off_chain (&dd->read_ahead.node);
 }
 
-static void
+  static void
 rtems_bdbuf_read_ahead_cancel (rtems_disk_device *dd)
 {
   if (rtems_bdbuf_is_read_ahead_active (dd))
@@ -2037,16 +2065,16 @@ rtems_bdbuf_read_ahead_cancel (rtems_disk_device *dd)
   }
 }
 
-static void
+  static void
 rtems_bdbuf_read_ahead_reset (rtems_disk_device *dd)
 {
   rtems_bdbuf_read_ahead_cancel (dd);
   dd->read_ahead.trigger = RTEMS_DISK_READ_AHEAD_NO_TRIGGER;
 }
 
-static void
+  static void
 rtems_bdbuf_check_read_ahead_trigger (rtems_disk_device *dd,
-                                      rtems_blkdev_bnum  block)
+    rtems_blkdev_bnum  block)
 {
   if (dd->read_ahead.trigger == block
       && !rtems_bdbuf_is_read_ahead_active (dd))
@@ -2056,15 +2084,15 @@ rtems_bdbuf_check_read_ahead_trigger (rtems_disk_device *dd,
 
     rtems_chain_append_unprotected (chain, &dd->read_ahead.node);
     sc = rtems_event_send (bdbuf_cache.read_ahead_task,
-                           RTEMS_BDBUF_READ_AHEAD_WAKE_UP);
+        RTEMS_BDBUF_READ_AHEAD_WAKE_UP);
     if (sc != RTEMS_SUCCESSFUL)
       rtems_fatal_error_occurred (RTEMS_BLKDEV_FATAL_BDBUF_RA_WAKE_UP);
   }
 }
 
-static void
+  static void
 rtems_bdbuf_set_read_ahead_trigger (rtems_disk_device *dd,
-                                    rtems_blkdev_bnum  block)
+    rtems_blkdev_bnum  block)
 {
   if (dd->read_ahead.trigger != block)
   {
@@ -2074,10 +2102,10 @@ rtems_bdbuf_set_read_ahead_trigger (rtems_disk_device *dd,
   }
 }
 
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_read (rtems_disk_device   *dd,
-                  rtems_blkdev_bnum    block,
-                  rtems_bdbuf_buffer **bd_ptr)
+    rtems_blkdev_bnum    block,
+    rtems_bdbuf_buffer **bd_ptr)
 {
   rtems_status_code     sc = RTEMS_SUCCESSFUL;
   rtems_bdbuf_buffer   *bd = NULL;
@@ -2090,7 +2118,7 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
   {
     if (rtems_bdbuf_tracer)
       printf ("bdbuf:read: %" PRIu32 " (%" PRIu32 ") (dev = %08x)\n",
-              media_block + dd->start, block, (unsigned) dd->dev);
+          media_block + dd->start, block, (unsigned) dd->dev);
 
     bd = rtems_bdbuf_get_buffer_for_access (dd, media_block);
     switch (bd->state)
@@ -2111,7 +2139,6 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
         {
           rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_CACHED);
           rtems_bdbuf_dequeue(bd);
-          //rtems_chain_extract_unprotected (&bd->link);
           rtems_bdbuf_group_obtain (bd);
         }
         else
@@ -2127,7 +2154,7 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
     rtems_bdbuf_check_read_ahead_trigger (dd, block);
   }
 
-    rtems_bdbuf_unlock_cache ();
+  rtems_bdbuf_unlock_cache ();
 
 
   *bd_ptr = bd;
@@ -2135,7 +2162,7 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
   return sc;
 }
 
-static rtems_status_code
+  static rtems_status_code
 rtems_bdbuf_check_bd_and_lock_cache (rtems_bdbuf_buffer *bd, const char *kind)
 {
   if (bd == NULL)
@@ -2150,7 +2177,7 @@ rtems_bdbuf_check_bd_and_lock_cache (rtems_bdbuf_buffer *bd, const char *kind)
   return RTEMS_SUCCESSFUL;
 }
 
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_release (rtems_bdbuf_buffer *bd)
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
@@ -2184,7 +2211,7 @@ rtems_bdbuf_release (rtems_bdbuf_buffer *bd)
   return RTEMS_SUCCESSFUL;
 }
 
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_release_modified (rtems_bdbuf_buffer *bd)
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
@@ -2216,7 +2243,7 @@ rtems_bdbuf_release_modified (rtems_bdbuf_buffer *bd)
   return RTEMS_SUCCESSFUL;
 }
 
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_sync (rtems_bdbuf_buffer *bd)
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
@@ -2248,7 +2275,7 @@ rtems_bdbuf_sync (rtems_bdbuf_buffer *bd)
   return RTEMS_SUCCESSFUL;
 }
 
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_syncdev (rtems_disk_device *dd)
 {
   if (rtems_bdbuf_tracer)
@@ -2289,7 +2316,7 @@ rtems_bdbuf_syncdev (rtems_disk_device *dd)
  *
  * @param transfer The transfer transaction.
  */
-static void
+  static void
 rtems_bdbuf_swapout_write (rtems_bdbuf_swapout_transfer* transfer)
 {
   rtems_chain_node *node;
@@ -2339,8 +2366,8 @@ rtems_bdbuf_swapout_write (rtems_bdbuf_swapout_transfer* transfer)
 
       if (rtems_bdbuf_tracer)
         printf ("bdbuf:swapout write: bd:%" PRIu32 ", bufnum:%" PRIu32 " mode:%s\n",
-                bd->block, transfer->write_req->bufnum,
-                need_continuous_blocks ? "MULTI" : "SCAT");
+            bd->block, transfer->write_req->bufnum,
+            need_continuous_blocks ? "MULTI" : "SCAT");
 
       if (need_continuous_blocks && transfer->write_req->bufnum &&
           bd->block != last_block + media_blocks_per_block)
@@ -2405,19 +2432,19 @@ rtems_bdbuf_swapout_write (rtems_bdbuf_swapout_transfer* transfer)
  * @param timer_delta It update_timers is true update the timers by this
  *                    amount.
  */
-static void
+  static void
 rtems_bdbuf_swapout_modified_processing (rtems_disk_device  **dd_ptr,
-                                         rtems_chain_control* chain,
-                                         rtems_chain_control* transfer,
-                                         bool                 sync_active,
-                                         bool                 update_timers,
-                                         uint32_t             timer_delta)
+    rtems_chain_control* chain,
+    rtems_chain_control* transfer,
+    bool                 sync_active,
+    bool                 update_timers,
+    uint32_t             timer_delta)
 {
   if (!rtems_chain_is_empty (chain))
   {
     rtems_chain_node* node = rtems_chain_head (chain);
     bool              sync_all;
-    
+
     node = node->next;
 
     /*
@@ -2427,7 +2454,7 @@ rtems_bdbuf_swapout_modified_processing (rtems_disk_device  **dd_ptr,
       sync_all = true;
     else
       sync_all = false;
-    
+
     while (!rtems_chain_is_tail (chain, node))
     {
       rtems_bdbuf_buffer* bd = (rtems_bdbuf_buffer*) node;
@@ -2528,10 +2555,10 @@ rtems_bdbuf_swapout_modified_processing (rtems_disk_device  **dd_ptr,
  * @retval true Buffers where written to disk so scan again.
  * @retval false No buffers where written to disk.
  */
-static bool
+  static bool
 rtems_bdbuf_swapout_processing (unsigned long                 timer_delta,
-                                bool                          update_timers,
-                                rtems_bdbuf_swapout_transfer* transfer)
+    bool                          update_timers,
+    rtems_bdbuf_swapout_transfer* transfer)
 {
   rtems_bdbuf_swapout_worker* worker;
   bool                        transfered_buffers = false;
@@ -2560,7 +2587,7 @@ rtems_bdbuf_swapout_processing (unsigned long                 timer_delta,
   rtems_chain_initialize_empty (&transfer->bds);
   transfer->dd = BDBUF_INVALID_DEV;
   transfer->syncing = bdbuf_cache.sync_active;
-  
+
   /*
    * When the sync is for a device limit the sync to that device. If the sync
    * is for a buffer handle process the devices in the order on the sync
@@ -2568,26 +2595,26 @@ rtems_bdbuf_swapout_processing (unsigned long                 timer_delta,
    */
   if (bdbuf_cache.sync_active)
     transfer->dd = bdbuf_cache.sync_device;
-    
+
   /*
    * If we have any buffers in the sync queue move them to the modified
    * list. The first sync buffer will select the device we use.
    */
   rtems_bdbuf_swapout_modified_processing (&transfer->dd,
-                                           &bdbuf_cache.sync,
-                                           &transfer->bds,
-                                           true, false,
-                                           timer_delta);
+      &bdbuf_cache.sync,
+      &transfer->bds,
+      true, false,
+      timer_delta);
 
   /*
    * Process the cache's modified list.
    */
   rtems_bdbuf_swapout_modified_processing (&transfer->dd,
-                                           &bdbuf_cache.modified,
-                                           &transfer->bds,
-                                           bdbuf_cache.sync_active,
-                                           update_timers,
-                                           timer_delta);
+      &bdbuf_cache.modified,
+      &transfer->bds,
+      bdbuf_cache.sync_active,
+      update_timers,
+      timer_delta);
 
   /*
    * We have all the buffers that have been modified for this device so the
@@ -2604,7 +2631,7 @@ rtems_bdbuf_swapout_processing (unsigned long                 timer_delta,
     if (worker)
     {
       rtems_status_code sc = rtems_event_send (worker->id,
-                                               RTEMS_BDBUF_SWAPOUT_SYNC);
+          RTEMS_BDBUF_SWAPOUT_SYNC);
       if (sc != RTEMS_SUCCESSFUL)
         rtems_fatal_error_occurred (RTEMS_BLKDEV_FATAL_BDBUF_SO_WAKE);
     }
@@ -2636,7 +2663,7 @@ rtems_bdbuf_swapout_processing (unsigned long                 timer_delta,
  *
  * @return rtems_blkdev_request* The write reference memory.
  */
-static rtems_blkdev_request*
+  static rtems_blkdev_request*
 rtems_bdbuf_swapout_writereq_alloc (void)
 {
   /*
@@ -2647,7 +2674,7 @@ rtems_bdbuf_swapout_writereq_alloc (void)
    */
   rtems_blkdev_request* write_req =
     malloc (sizeof (rtems_blkdev_request) +
-            (bdbuf_config.max_write_blocks * sizeof (rtems_blkdev_sg_buffer)));
+        (bdbuf_config.max_write_blocks * sizeof (rtems_blkdev_sg_buffer)));
 
   if (!write_req)
     rtems_fatal_error_occurred (RTEMS_BLKDEV_FATAL_BDBUF_SO_NOMEM);
@@ -2666,7 +2693,7 @@ rtems_bdbuf_swapout_writereq_alloc (void)
  * @param arg A pointer to the worker thread's private data.
  * @return rtems_task Not used.
  */
-static rtems_task
+  static rtems_task
 rtems_bdbuf_swapout_worker_task (rtems_task_argument arg)
 {
   rtems_bdbuf_swapout_worker* worker = (rtems_bdbuf_swapout_worker*) arg;
@@ -2696,7 +2723,7 @@ rtems_bdbuf_swapout_worker_task (rtems_task_argument arg)
 /**
  * Open the swapout worker threads.
  */
-static void
+  static void
 rtems_bdbuf_swapout_workers_open (void)
 {
   rtems_status_code sc;
@@ -2720,11 +2747,11 @@ rtems_bdbuf_swapout_workers_open (void)
     worker->transfer.dd = BDBUF_INVALID_DEV;
 
     sc = rtems_bdbuf_create_task (rtems_build_name('B', 'D', 'o', 'a' + w),
-                                  bdbuf_config.swapout_worker_priority,
-                                  RTEMS_BDBUF_SWAPOUT_WORKER_TASK_PRIORITY_DEFAULT,
-                                  rtems_bdbuf_swapout_worker_task,
-                                  (rtems_task_argument) worker,
-                                  &worker->id);
+        bdbuf_config.swapout_worker_priority,
+        RTEMS_BDBUF_SWAPOUT_WORKER_TASK_PRIORITY_DEFAULT,
+        rtems_bdbuf_swapout_worker_task,
+        (rtems_task_argument) worker,
+        &worker->id);
     if (sc != RTEMS_SUCCESSFUL)
       rtems_fatal_error_occurred (RTEMS_BLKDEV_FATAL_BDBUF_SO_WK_CREATE);
   }
@@ -2735,7 +2762,7 @@ rtems_bdbuf_swapout_workers_open (void)
 /**
  * Close the swapout worker threads.
  */
-static void
+  static void
 rtems_bdbuf_swapout_workers_close (void)
 {
   rtems_chain_node* node;
@@ -2761,7 +2788,7 @@ rtems_bdbuf_swapout_workers_close (void)
  *            not this.
  * @return rtems_task Not used.
  */
-static rtems_task
+  static rtems_task
 rtems_bdbuf_swapout_task (rtems_task_argument arg)
 {
   rtems_bdbuf_swapout_transfer transfer;
@@ -2816,8 +2843,8 @@ rtems_bdbuf_swapout_task (rtems_task_argument arg)
        * buffers first.
        */
       if (rtems_bdbuf_swapout_processing (timer_delta,
-                                          update_timers,
-                                          &transfer))
+            update_timers,
+            &transfer))
       {
         transfered_buffers = true;
       }
@@ -2830,9 +2857,9 @@ rtems_bdbuf_swapout_task (rtems_task_argument arg)
     while (transfered_buffers);
 
     sc = rtems_event_receive (RTEMS_BDBUF_SWAPOUT_SYNC,
-                              RTEMS_EVENT_ALL | RTEMS_WAIT,
-                              period_in_ticks,
-                              &out);
+        RTEMS_EVENT_ALL | RTEMS_WAIT,
+        period_in_ticks,
+        &out);
 
     if ((sc != RTEMS_SUCCESSFUL) && (sc != RTEMS_TIMEOUT))
       rtems_fatal_error_occurred (BLKDEV_FATAL_BDBUF_SWAPOUT_RE);
@@ -2845,7 +2872,7 @@ rtems_bdbuf_swapout_task (rtems_task_argument arg)
   rtems_task_delete (RTEMS_SELF);
 }
 
-static void
+  static void
 rtems_bdbuf_purge_list (rtems_chain_control *purge_list)
 {
   bool wake_buffer_waiters = false;
@@ -2865,9 +2892,9 @@ rtems_bdbuf_purge_list (rtems_chain_control *purge_list)
     rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
 }
 
-static void
+  static void
 rtems_bdbuf_gather_for_purge (rtems_chain_control *purge_list,
-                              const rtems_disk_device *dd)
+    const rtems_disk_device *dd)
 {
   rtems_bdbuf_buffer *stack [RTEMS_BDBUF_AVL_MAX_HEIGHT];
   rtems_bdbuf_buffer **prev = stack;
@@ -2927,7 +2954,7 @@ rtems_bdbuf_gather_for_purge (rtems_chain_control *purge_list,
     else
     {
       while (*prev != NULL
-             && (cur == (*prev)->avl.right || (*prev)->avl.right == NULL))
+          && (cur == (*prev)->avl.right || (*prev)->avl.right == NULL))
       {
         /* Up */
         cur = *prev;
@@ -2943,7 +2970,7 @@ rtems_bdbuf_gather_for_purge (rtems_chain_control *purge_list,
   }
 }
 
-void
+  void
 rtems_bdbuf_purge_dev (rtems_disk_device *dd)
 {
   rtems_chain_control purge_list;
@@ -2956,7 +2983,7 @@ rtems_bdbuf_purge_dev (rtems_disk_device *dd)
   rtems_bdbuf_unlock_cache ();
 }
 
-rtems_status_code
+  rtems_status_code
 rtems_bdbuf_set_block_size (rtems_disk_device *dd, uint32_t block_size)
 {
   rtems_status_code sc = RTEMS_SUCCESSFUL;
@@ -3004,7 +3031,7 @@ rtems_bdbuf_set_block_size (rtems_disk_device *dd, uint32_t block_size)
   return sc;
 }
 
-static rtems_task
+  static rtems_task
 rtems_bdbuf_read_ahead_task (rtems_task_argument arg)
 {
   rtems_chain_control *chain = &bdbuf_cache.read_ahead_chain;
@@ -3065,7 +3092,7 @@ rtems_bdbuf_read_ahead_task (rtems_task_argument arg)
 }
 
 void rtems_bdbuf_get_device_stats (const rtems_disk_device *dd,
-                                   rtems_blkdev_stats      *stats)
+    rtems_blkdev_stats      *stats)
 {
   rtems_bdbuf_lock_cache ();
   *stats = dd->stats;
