@@ -16,10 +16,13 @@ directives:
 + read
 + write
 + lseek
-+ opendir
-+ mkdir
 
 
 concepts:
-+ This test intend to be a benchmark for bdbuf, but now it only contains
-some random file operation borrowed from libtests/flashdisk01. 
++ This test could  be a benchmark for bdbuf. The basic concept of the test is
+ to prase strings contains the I/O operation meta data and carry out these
+ operation.
+
+
+
+
