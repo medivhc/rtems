@@ -1240,38 +1240,31 @@ rtems_bdbuf_setup_empty_buffer (rtems_bdbuf_buffer *bd,
   rtems_bdbuf_make_empty (bd);
 }
 static rtems_bdbuf_buffer *rtems_bdbuf_check_and_realloc(rtems_bdbuf_buffer *bd,
-    rtems_disk_device  *dd,
-    rtems_blkdev_bnum block)
+    rtems_disk_device  *dd)
 {
-    rtems_bdbuf_buffer *empty_bd = NULL;
 
-    if (rtems_bdbuf_tracer)
-      printf ("bdbuf:next-bd: %tu (%td:%" PRId32 ") %zd -> %zd\n",
-          bd - bdbuf_cache.bds,
-          bd->group - bdbuf_cache.groups, bd->group->users,
-          bd->group->bds_per_group, dd->bds_per_group);
+  rtems_bdbuf_buffer *empty_bd = NULL;
+  if (rtems_bdbuf_tracer)
+    printf ("bdbuf:next-bd: %tu (%td:%" PRId32 ") %zd -> %zd\n",
+        bd - bdbuf_cache.bds,
+        bd->group - bdbuf_cache.groups, bd->group->users,
+        bd->group->bds_per_group, dd->bds_per_group);
 
-    /*
-     * If nobody waits for this BD, we may recycle it.
-     */
-    if (bd->waiters == 0)
+  /*
+   * If nobody waits for this BD, we may recycle it.
+   */
+  if (bd->waiters == 0)
+  {
+    if (bd->group->bds_per_group == dd->bds_per_group)
     {
-      if (bd->group->bds_per_group == dd->bds_per_group)
-      {
-        rtems_bdbuf_remove_from_tree_and_queue (bd);
-        empty_bd = bd;
-      }
-      else if (bd->group->users == 0)
-        empty_bd = rtems_bdbuf_group_realloc (bd->group, dd->bds_per_group);
+      rtems_bdbuf_remove_from_tree_and_queue (bd);
+      empty_bd = bd;
     }
+    else if (bd->group->users == 0)
+      empty_bd = rtems_bdbuf_group_realloc (bd->group, dd->bds_per_group);
+  }
 
-    if (empty_bd != NULL)
-    {
-      rtems_bdbuf_setup_empty_buffer (empty_bd, dd, block);
-
-      return empty_bd;
-    }
-    return NULL;
+  return empty_bd;
 
 }
 
@@ -1283,31 +1276,52 @@ rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
 
   rtems_bdbuf_buffer *bd = NULL;
   rtems_bdbuf_buffer *empty_bd = NULL;
+  bool finished = false;
 
+  do {
   /*
    * Check if the buffer in the free list 
    */
-  rtems_chain_node *chain_node = rtems_chain_first (&bdbuf_cache.free_list);
-  if (!rtems_chain_is_tail (&bdbuf_cache.free_list,chain_node)) {
-    bd =  (rtems_bdbuf_buffer *) chain_node;
-    empty_bd = rtems_bdbuf_check_and_realloc (bd,dd,block);
-    if (empty_bd != NULL)
-      return empty_bd;
-  }
-  while ((bd = rtems_bdbuf_select_victim(empty_bd)) != NULL) {
-    empty_bd = rtems_bdbuf_check_and_realloc (bd,dd,block);
-    if (empty_bd!=NULL) {
-      return empty_bd;
-    } else {
-      chain_node = rtems_chain_first (&bdbuf_cache.free_list);
-      if (!rtems_chain_is_tail (&bdbuf_cache.free_list,chain_node)) {
-        bd =  (rtems_bdbuf_buffer *) chain_node;
-        empty_bd = rtems_bdbuf_check_and_realloc (bd,dd,block);
-        if (empty_bd != NULL)
-          return empty_bd;
+    empty_bd = NULL;
+    rtems_chain_node *chain_node = rtems_chain_first (&bdbuf_cache.free_list);
+    while  (!rtems_chain_is_tail (&bdbuf_cache.free_list,chain_node)) {
+      bd =  (rtems_bdbuf_buffer *) chain_node;
+      empty_bd = rtems_bdbuf_check_and_realloc (bd,dd);
+      if (empty_bd != NULL) {
+        break;
+      } else {
+        chain_node = rtems_chain_next(chain_node);
       }
-      empty_bd = bd;
     }
+
+    if  (empty_bd == NULL) {
+      /*
+       * get bdbuf from CACHED
+       */
+      do {
+        bd = rtems_bdbuf_select_victim(empty_bd);
+        /*
+         * no bdbuf in CACHED 
+         */
+        if (bd == NULL) {
+          finished = true;
+          break;
+        }
+        empty_bd = bd;
+        bd = rtems_bdbuf_check_and_realloc(empty_bd,dd);
+      } while (bd == NULL);
+
+    } else { /* not NULL */
+      break;
+    }
+
+
+  } while ( empty_bd == NULL && finished == false);
+
+  if (empty_bd != NULL)
+  {
+    rtems_bdbuf_setup_empty_buffer (empty_bd, dd, block);
+    return empty_bd;
   }
 
   return NULL;
@@ -1595,12 +1609,11 @@ rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
       case RTEMS_BDBUF_STATE_MODIFIED:
         rtems_bdbuf_group_release (bd);
         rtems_chain_extract_unprotected (&bd->link);
-        /* Fall through */
         return;
       case RTEMS_BDBUF_STATE_CACHED:
-        rtems_bdbuf_dequeue(bd);
-        /* Fall through */
+        rtems_bdbuf_fatal (bd->state, RTEMS_BLKDEV_FATAL_BDBUF_STATE_7);
       case RTEMS_BDBUF_STATE_EMPTY:
+        rtems_bdbuf_dequeue(bd);
         return;
       case RTEMS_BDBUF_STATE_ACCESS_CACHED:
       case RTEMS_BDBUF_STATE_ACCESS_EMPTY:
@@ -1787,13 +1800,12 @@ rtems_bdbuf_get_buffer_for_access (rtems_disk_device *dd,
           rtems_bdbuf_make_free_and_add_to_free_list (bd);
           rtems_bdbuf_wake (&bdbuf_cache.buffer_waiters);
         }
-        bd = NULL;
+        bd = rtmes_bdbuf_get_buffer_from_queue (dd, block);
       }
     }
     else
     {
       bd = rtmes_bdbuf_get_buffer_from_queue (dd, block);
-
       if (bd == NULL)
         rtems_bdbuf_wait_for_buffer ();
     }

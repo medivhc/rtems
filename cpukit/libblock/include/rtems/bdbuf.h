@@ -685,7 +685,7 @@ rtems_status_code
 rtems_bdbuf_init_policy(void);
 
 /**
-* @brief Get the victim buffer. 
+* @brief Gets the victim buffer. 
 *
 * @param begin From where to select. Use NULL to start. 
 *
@@ -694,12 +694,12 @@ rtems_bdbuf_init_policy(void);
 rtems_bdbuf_buffer* rtems_bdbuf_select_victim(rtems_bdbuf_buffer *begin);
 
 /**
-* @brief Put the buffer to the queue.
+* @brief Puts the buffer to the queue.
 *
 */
 void rtems_bdbuf_enqueue(rtems_bdbuf_buffer *bd);
 /**
-* @brief Put the buffer off the queue.
+* @brief Puts the buffer off the queue.
 *
 */
 void rtems_bdbuf_dequeue(rtems_bdbuf_buffer *bd);
