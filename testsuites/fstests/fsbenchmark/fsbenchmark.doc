@@ -22,7 +22,3 @@ concepts:
 + This test could  be a benchmark for bdbuf. The basic concept of the test is
  to prase strings contains the I/O operation meta data and carry out these
  operation.
-
-
-
-

@@ -1,5 +1,5 @@
 /*
- *  COPYRIGHT (c) 1989-2011.
+ *  COPYRIGHT (c) 1989-2012.
  *  On-Line Applications Research Corporation (OAR).
  *
  *  The license and distribution terms for this file may be
@@ -23,7 +23,6 @@
  * The test will not handle any error or check any data integrity. If error
  * occurs, it just use perror() to print them.
  */
-
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -50,7 +49,7 @@ const static  int RUN_TIMES = 5;
 
 const static mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
 char workload_input[] = {
-  "1 W 0 0 r\n"
+    "1 W 0 0 r\n"
     "1 W L r r\nn"
     "1 W L 0 r\n"
     "1 W L 0 r\n"
@@ -118,7 +117,7 @@ char workload_input[] = {
     "1 C 3\n"
 };
 
-  static void
+static void
 check_status (char *message, int result)
 {
   if (!result)
@@ -158,7 +157,7 @@ struct test_item
   int fd;
 };
 
-  static long
+static long
 prase_long (const char*str)
 {
   if (isdigit ((int) *str))
@@ -173,18 +172,23 @@ prase_long (const char*str)
         return state.pos;
         break;
       case 'r':
-        return (lrand48 () % (long)MAX_LEN)+1;
+      {
+        long max_len = MAX_LEN;
+        if (*(str+1) !='\0'){
+          max_len =atol (str+1);
+        }
+        return (lrand48 () % max_len)+1;
+      }
       case 'u':
-        return 0;
+      return 0;
     }
     return 0;
-
   }
 }
-  static void
+
+static void
 fill_test_entry (test_arg_type arg, char *pch, struct test_item * it)
 {
-
   switch (arg)
   {
     case INDEX:
@@ -205,10 +209,9 @@ fill_test_entry (test_arg_type arg, char *pch, struct test_item * it)
       break;
     case OTHER:
       break;
-    default:
-      exit (1);
   }
 }
+
 static void do_common_before (struct test_item *it)
 {
   int fd;
@@ -261,7 +264,6 @@ do_read (struct test_item *it)
 {
   do_common_before (it);
 
-
   void * buffer = malloc (it->size);
 
   size_t n;
@@ -277,14 +279,11 @@ do_read (struct test_item *it)
     }
   }
   check_status ("read ", n != -1);
-
   printf ("read  file: %d size: %d\n", state.previous_name,actual);
-
   free (buffer);
   do_common_afer (it);
   return actual;
 }
-
 
 static off_t
 do_write (struct test_item *it)
@@ -308,7 +307,6 @@ do_write (struct test_item *it)
   printf ("write file: %d size: %d\n", state.previous_name,actual);
   do_common_afer (it);
   return actual;
-
 }
 
 static off_t
@@ -332,10 +330,10 @@ do_close (struct test_item *it)
   char first_char = it->name[0];
   if (isdigit ((int)first_char))
   { /* file name */
-    rv = close (fd_array[atoi (it->name)]);
+    int name = atoi (it->name);
+    rv = close (fd_array[name]);
     check_status ("close", rv == 0);
-
-    fd_array[atoi (it->name)] = -1;
+    state.previous_name  = name; 
   }
   else
   { /* last file */
@@ -343,15 +341,13 @@ do_close (struct test_item *it)
     check_status ("close", rv == 0);
   }
   it->fd = -1;
-
   do_common_afer(it);
-
 }
 
 static void
 execute_entry (struct test_item *it)
 {
-  off_t result;
+  off_t result = 0;
   switch (it->op)
   {
     case 'R':
@@ -373,7 +369,7 @@ execute_entry (struct test_item *it)
   state.pos = result;
 }
 
-static  void parse (char *str)
+static  void parse_and_execute (char *str)
 {
   char *pch;
   pch = strtok (str, " ");
@@ -400,10 +396,9 @@ static void process (const char* str)
   {
     pch = (char*) memchr (start, '\n', strlen (start));
     size_t len = pch - start;
-
     strncpy (buffer, start, len);
     buffer[len] = '\0';
-    parse (buffer);
+    parse_and_execute (buffer);
     start = pch + 1;
   }
 }
@@ -416,8 +411,6 @@ static void init (void )
   state.pos = 0;
   state.previous_fd =-1;
 }
-
-
 
 static void print_dev_stats(void)
 {
