@@ -1265,15 +1265,12 @@ static rtems_bdbuf_buffer *rtems_bdbuf_check_and_realloc(rtems_bdbuf_buffer *bd,
   }
 
   return empty_bd;
-
 }
 
 static rtems_bdbuf_buffer *
 rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
                                       rtems_blkdev_bnum  block)
 {
-
-
   rtems_bdbuf_buffer *bd = NULL;
   rtems_bdbuf_buffer *empty_bd = NULL;
   bool finished = false;
@@ -1293,28 +1290,23 @@ rtmes_bdbuf_get_buffer_from_queue (rtems_disk_device *dd,
         chain_node = rtems_chain_next(chain_node);
       }
     }
-
-    if  (empty_bd == NULL) {
+    bd = NULL;
+    while (empty_bd == NULL) {
       /*
        * get bdbuf from CACHED
        */
-      do {
-        bd = rtems_bdbuf_select_victim(empty_bd);
+      empty_bd= rtems_bdbuf_victim_next(bd);
+      if (empty_bd == NULL) {
         /*
          * no bdbuf in CACHED 
          */
-        if (bd == NULL) {
-          finished = true;
-          break;
-        }
-        empty_bd = bd;
-        bd = rtems_bdbuf_check_and_realloc(empty_bd,dd);
-      } while (bd == NULL);
-
-    } else { /* not NULL */
-      break;
+        finished = true;
+        break;
+      } else {
+        bd = empty_bd;
+        empty_bd = rtems_bdbuf_check_and_realloc(bd,dd);
+      }
     }
-
 
   } while ( empty_bd == NULL && finished == false);
 
@@ -1610,10 +1602,9 @@ rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
         rtems_bdbuf_group_release (bd);
         rtems_chain_extract_unprotected (&bd->link);
         return;
-      case RTEMS_BDBUF_STATE_CACHED:
-        rtems_bdbuf_fatal (bd->state, RTEMS_BLKDEV_FATAL_BDBUF_STATE_7);
       case RTEMS_BDBUF_STATE_EMPTY:
         rtems_bdbuf_dequeue(bd);
+      case RTEMS_BDBUF_STATE_CACHED:
         return;
       case RTEMS_BDBUF_STATE_ACCESS_CACHED:
       case RTEMS_BDBUF_STATE_ACCESS_EMPTY:
@@ -1869,6 +1860,7 @@ rtems_bdbuf_get (rtems_disk_device   *dd,
     {
       case RTEMS_BDBUF_STATE_CACHED:
         rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_CACHED);
+        rtems_bdbuf_dequeue(bd);
         break;
       case RTEMS_BDBUF_STATE_EMPTY:
         rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_EMPTY);
@@ -2931,7 +2923,8 @@ rtems_bdbuf_gather_for_purge (rtems_chain_control *purge_list,
         case RTEMS_BDBUF_STATE_MODIFIED:
           rtems_chain_extract_unprotected(&cur->link);
           rtems_bdbuf_group_release (cur);
-          /* Fall through */
+          rtems_chain_append_unprotected (purge_list, &cur->link);
+          break;
         case RTEMS_BDBUF_STATE_CACHED:
           rtems_bdbuf_dequeue(cur);
           rtems_chain_append_unprotected (purge_list, &cur->link);
