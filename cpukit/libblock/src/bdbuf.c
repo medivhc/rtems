@@ -232,6 +232,12 @@ static rtems_task rtems_bdbuf_read_ahead_task(rtems_task_argument arg);
  */
 static rtems_bdbuf_cache bdbuf_cache;
 
+
+rtems_status_code (*rtems_bdbuf_init_policy)(void);
+rtems_bdbuf_buffer *(*rtems_bdbuf_victim_next)(rtems_bdbuf_buffer *);
+void (*rtems_bdbuf_enqueue)(rtems_bdbuf_buffer *);
+void (*rtems_bdbuf_dequeue)(rtems_bdbuf_buffer *);
+
 #if RTEMS_BDBUF_TRACE
 /**
  * If true output the trace message.
@@ -1518,6 +1524,13 @@ rtems_bdbuf_init (void)
                       cache_aligment,
                       bdbuf_cache.buffer_min_count * bdbuf_config.buffer_min) != 0)
     goto error;
+
+
+
+  rtems_bdbuf_init_policy = bdbuf_config.policy.rtems_bdbuf_init_policy;
+  rtems_bdbuf_victim_next = bdbuf_config.policy.rtems_bdbuf_victim_next;
+  rtems_bdbuf_enqueue = bdbuf_config.policy.rtems_bdbuf_enqueue;
+  rtems_bdbuf_dequeue = bdbuf_config.policy.rtems_bdbuf_dequeue;
 
   sc = rtems_bdbuf_init_policy();
   if (sc != RTEMS_SUCCESSFUL)
@@ -3155,43 +3168,3 @@ void rtems_bdbuf_reset_device_stats (rtems_disk_device *dd)
 }
 
 
-
-
-
-rtems_chain_control lru;               /**< Least recently used list */
-
-#define container_of(ptr, type, member) \
- ((type *)((char *)ptr - offsetof(type, member)))
-
-rtems_status_code
-rtems_bdbuf_init_policy()
-{
-  rtems_chain_initialize_empty(&lru);
-  return RTEMS_SUCCESSFUL;
-}
-
-rtems_bdbuf_buffer* rtems_bdbuf_victim_next(rtems_bdbuf_buffer* last)
-{
-  rtems_chain_node *chain_node; 
-  if (last == NULL) {
-    chain_node = rtems_chain_first (&lru);
-  }
-  else { 
-    chain_node = rtems_chain_next (&last->node);
-  }
-  if  (!rtems_chain_is_tail (&lru, chain_node)) {
-    rtems_bdbuf_buffer *bd = container_of(chain_node,rtems_bdbuf_buffer,node);
-    return bd;
-  }
-  return NULL;
-}
-
-void rtems_bdbuf_enqueue(rtems_bdbuf_buffer *bd)
-{
-  rtems_chain_append_unprotected (&lru, &bd->node);
-}
-
-void rtems_bdbuf_dequeue(rtems_bdbuf_buffer *bd)
-{
-  rtems_chain_extract_unprotected (&bd->node);
-}
