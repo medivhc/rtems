@@ -248,6 +248,14 @@ $(PROJECT_INCLUDE)/rtems/bdbuf.h: libblock/include/rtems/bdbuf.h $(PROJECT_INCLU
 	$(INSTALL_DATA) $< $(PROJECT_INCLUDE)/rtems/bdbuf.h
 PREINSTALL_FILES += $(PROJECT_INCLUDE)/rtems/bdbuf.h
 
+$(PROJECT_INCLUDE)/rtems/bdbuf_lru.h: libblock/include/rtems/bdbuf_lru.h $(PROJECT_INCLUDE)/rtems/$(dirstamp)
+	$(INSTALL_DATA) $< $(PROJECT_INCLUDE)/rtems/bdbuf_lru.h
+PREINSTALL_FILES += $(PROJECT_INCLUDE)/rtems/bdbuf_lru.h
+
+$(PROJECT_INCLUDE)/rtems/bdbuf_clock.h: libblock/include/rtems/bdbuf_clock.h $(PROJECT_INCLUDE)/rtems/$(dirstamp)
+	$(INSTALL_DATA) $< $(PROJECT_INCLUDE)/rtems/bdbuf_clock.h
+PREINSTALL_FILES += $(PROJECT_INCLUDE)/rtems/bdbuf_clock.h
+
 $(PROJECT_INCLUDE)/rtems/blkdev.h: libblock/include/rtems/blkdev.h $(PROJECT_INCLUDE)/rtems/$(dirstamp)
 	$(INSTALL_DATA) $< $(PROJECT_INCLUDE)/rtems/blkdev.h
 PREINSTALL_FILES += $(PROJECT_INCLUDE)/rtems/blkdev.h

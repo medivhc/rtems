@@ -357,6 +357,48 @@ struct rtems_bdbuf_group
   rtems_bdbuf_buffer* bdbuf;         /**< First BD this block covers. */
 };
 
+typedef struct { 
+
+  /**
+   * @brief Init replacement policy.
+   * @retval RTEMS_SUCCESSFUL Successful operation.
+   */
+  rtems_status_code (*rtems_bdbuf_init_policy) (void);
+
+  /**
+   * @brief Gets the victim buffer candidate.
+   * Briefly this call works like iterator for buffer in CACHED.
+   *
+   * @param pre  From where to select. Use NULL to start.
+   *
+   * @return The less suitable victim buffer candidate. The state of the buffer
+   *  must be CACHED. Return NULL if no less suitable buffer.
+   */
+  rtems_bdbuf_buffer* (*rtems_bdbuf_victim_next) (rtems_bdbuf_buffer *pre);
+
+  /**
+   * @brief Add the buffer to the queue.
+   * The next state of the buffer is CACHED.
+   *
+   * The state of the buffer could be TRANSFER or ACCESS_CACHED.
+   * TRANSER and ACCESS_CACHED are the previous state of the buffer.
+   *
+   */
+  void (*rtems_bdbuf_enqueue) (rtems_bdbuf_buffer *bd);
+
+  /**
+   * @brief Remove the buffer from the queue.
+   * The previous state of the buffer is CACHED.
+   *
+   * The state of the buffer could be EMPTY CACHED or ACCESS_CACHED.
+   * EMPTY and ACCESS_CACHED are the next state of the buffer.
+   * EMPTY means the buffer is recycled.
+   * CACHED means the buffer is purgred. The next state of the buffer is EMPTY.
+   * ACCESS_CACHED means the is called by get or read.
+   */
+  void (*rtems_bdbuf_dequeue) (rtems_bdbuf_buffer *bd);
+} rtems_bdbuf_policy;
+
 /**
  * Buffering configuration definition. See confdefs.h for support on using this
  * structure.
@@ -386,6 +428,7 @@ typedef struct rtems_bdbuf_config {
                                                 * allocation size. */
   rtems_task_priority read_ahead_priority;     /**< Priority of the read-ahead
                                                 * task. */
+  rtems_bdbuf_policy  policy;                  /**< Replacement policy for bdbuf.*/
 } rtems_bdbuf_config;
 
 /**
@@ -676,47 +719,6 @@ rtems_bdbuf_get_device_stats (const rtems_disk_device *dd,
  */
 void
 rtems_bdbuf_reset_device_stats (rtems_disk_device *dd);
-
-/**
- * @brief Init replacement policy 
- * @retval RTEMS_SUCCESSFUL Successful operation. 
- */
-rtems_status_code
-rtems_bdbuf_init_policy(void);
-
-/**
-* @brief Gets the victim buffer candidate.
-* Briefly this call works like iterator for buffer in CACHED.
-*
-* @param pre  From where to select. Use NULL to start. 
-*
-* @return The less suitable victim buffer candidate. The state of the buffer
-*  must be CACHED. Return NULL if no less suitable buffer.
-*/
-rtems_bdbuf_buffer* rtems_bdbuf_victim_next(rtems_bdbuf_buffer *pre);
-
-/**
-* @brief Add the buffer to the queue.
-* The next state of the buffer is CACHED.
-*
-* The state of the buffer could be TRANSFER or ACCESS_CACHED.
-* TRANSER and ACCESS_CACHED are the previous state of the buffer.
-*
-*/
-void rtems_bdbuf_enqueue(rtems_bdbuf_buffer *bd);
-
-/**
-* @brief Remove the buffer from the queue.
-* The previous state of the buffer is CACHED.
-*
-* The state of the buffer could be EMPTY CACHED or ACCESS_CACHED.
-* EMPTY and ACCESS_CACHED are the next state of the buffer.
-* EMPTY means the buffer is recycled.
-* CACHED means the buffer is purgred. The next state of the buffer is EMPTY.
-* ACCESS_CACHED means the is called by get or read.
-*/
-void rtems_bdbuf_dequeue(rtems_bdbuf_buffer *bd);
-
 
 /**
  * Defines for policy use.
