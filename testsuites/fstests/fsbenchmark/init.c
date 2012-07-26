@@ -5,24 +5,12 @@
  *  The license and distribution terms for this file may be
  *  found in the file LICENSE in this distribution or at
  *  http://www.rtems.com/license/LICENSE.
+ *  COPYRIGHT (c)  2012 Xaing Cui <medivhc@gmail.com>
  */
 
 
 
 
-/*
- * Every operation divided by '\n'. Reading 4 bytes from file 2 starting
- * at 3  could be expressed as  "1 R 2 3 4". The order of the parameters 
- * is index operation file_name start size. index here have no meaning now.
- * operation  could be R W L C U which mean read write lseek close and
- * unlink respectively. file_name could be [0-MAX_FILE_NUM-1] or L which
- * means last opened file. start and size could be positive integer or r
- * which means random. If start is 0, it will do nothing, else I will call
- * lseek SEEK_SET before read or write. If file with file_name does not exists,
- * W R L will create file with O_WRONLY O_RDONLY O_RDWR respectively. 
- * The test will not handle any error or check any data integrity. If error
- * occurs, it just use perror() to print them.
- */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -48,73 +36,72 @@ static int fd_array[MAX_OPEN_FILE];
 const static  int RUN_TIMES = 5;
 
 const static mode_t mode = S_IRWXU | S_IRWXG | S_IRWXO;
+
+/*
+ * Every operation divided by '\n'. Reading 4 bytes from file 2 starting
+ * at 3  could be expressed as  "1 R 2 3 4". The order of the parameters 
+ * is index operation file_name start size. index here have no meaning now.
+ * operation  could be R W L C U which mean read write lseek close and
+ * unlink respectively. file_name could be [0-MAX_FILE_NUM-1] or L which
+ * means last opened file. start and size could be positive integer or r
+ * which means random. If start is 0, it will do nothing, else I will call
+ * lseek SEEK_SET before read or write. If file with file_name does not exists,
+ * W R L will create file with O_WRONLY O_RDONLY O_RDWR respectively. 
+ * The test will not handle any error or check any data integrity. If error
+ * occurs, it just use perror() to print them.
+ */
 char workload_input[] = {
-    "1 W 0 0 r\n"
-    "1 W L r r\nn"
-    "1 W L 0 r\n"
-    "1 W L 0 r\n"
-    "1 W L 0 1024\n"
-    "1 W L 0 1024\n"
-    "1 L L r 1024\n"
-    "1 C L 0 1024\n"
-    "1 R 0 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 r\n"
-    "1 L L r 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L r r\n"
-    "1 R L 0 1024\n"
-    "1 R L r 1024\n"
-    "1 R L 0 r\n"
-    "1 L L r r\n"
-    "1 R L 0 r\n"
-    "1 C L 0 1024\n"
-    "1 W 0 0 r\n"
-    "1 W L r r\nn"
-    "1 L L r 1024\n"
-    "1 W L 0 r\n"
-    "1 W L 0 r\n"
-    "1 W L 0 1024\n"
-    "1 W L 0 1024\n"
-    "1 C L 0 r\n"
-    "1 L L r r\n"
-    "1 L 1 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 r\n"
-    "1 W L 0 r\n"
-    "1 W L 0 r\n"
-    "1 L L r 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 r\n"
-    "1 R L 0 1024\n"
-    "1 R L r r\n"
-    "1 R L 0 1024\n"
-    "1 L 0 0 1024\n"
-    "1 R L 0 r\n"
-    "1 R L 0 r\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 r\n"
-    "1 R L 0 1024\n"
-    "1 R L 0 r\n"
-    "1 R L 0 1024\n"
-    "1 L 3 0 1024\n"
-    "1 L L r 1024\n"
-    "1 W L 0 1024\n"
-    "1 W L 0 1024\n"
-    "1 W L 0 1024\n"
-    "1 W L 0 r\n"
-    "1 L L r 1024\n"
-    "1 W L 0 1024\n"
-    "1 W L 0 r\n"
-    "1 L L 0 r\n"
-    "1 L L 0 1024\n"
-    "1 C 3\n"
+    "1 W 0 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 C L 0 10240\n"
+    "1 R 0 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 C L 0 10240\n"
+    "1 L 0 0 10240\n"
+    "1 W 0 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 W L 0 10240\n"
+    "1 R 0 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 R L 0 10240\n"
+    "1 C L 0 10240\n"
+    "1 L 0 0 10240\n"
+    "1 W L r 10240\n"
+    "1 W L r 10240\n"
+    "1 W L r 10240\n"
+    "1 W L r 10240\n"
+    "1 W L r 10240\n"
+    "1 R L r 10240\n"
+    "1 R L r 10240\n"
+    "1 R L r 10240\n"
+    "1 R L r 10240\n"
+    "1 R L r 10240\n"
+    "1 C L 0\n"
+
 };
 
 static void
