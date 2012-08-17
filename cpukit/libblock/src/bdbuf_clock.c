@@ -14,8 +14,7 @@
 #include "rtems/bdbuf.h"
 #include "rtems/bdbuf_clock.h"
 
-#define CLOCK_IN_QUEUE BDBUF_PRIVATE1
-#define CLOCK_HIT BDBUF_PRIVATE2
+#define CLOCK_TRACE 0
 
 #define container_of(ptr, type, member) \
  ((type *)((char *)ptr - offsetof(type, member)))
@@ -32,6 +31,7 @@ static uint32_t clock_size;
 static bool is_second_round;
 
 
+#if CLOCK_TRACE
 static void print_usage(void)
 {
   const char* states[] =
@@ -46,8 +46,10 @@ static void print_usage(void)
     chain_node = rtems_chain_next( chain_node);
   } while (chain_node!= clock_hand);
   printf("\n");
-
 }
+#else
+#define print_usage ((void)0)
+#endif
 
 static uint32_t rtems_bdbuf_list_count (rtems_chain_control* list)
 {

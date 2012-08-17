@@ -27,7 +27,7 @@
 /**
  * Set to 1 to enable debug tracing.
  */
-#define RTEMS_BDBUF_TRACE 1
+#define RTEMS_BDBUF_TRACE 0
 
 #if HAVE_CONFIG_H
 #include "config.h"

@@ -25,6 +25,7 @@
 /*
  * Turn on assertions when RTEMS_DEBUG is defined.
  */
+#define CLOCK_PRO_TRACE 0
 #ifdef RTEMS_DEBUG
 #include <assert.h>
 #define CLOCK_ASSERT(_x) assert(_x)
@@ -74,6 +75,68 @@ typedef struct
 } clock_pro_state;
 
 static clock_pro_state clock_pro;
+#if CLOCK_PRO_TRACE
+static void
+show_usage (void)
+{
+  printf ("test :");
+  show_ring_begin_with (clock_pro.hand_test);
+  printf ("\nhot  :");
+  show_ring_begin_with (clock_pro.hand_hot);
+  printf ("\ncold :");
+  show_ring_begin_with (clock_pro.hand_cold);
+  printf ("\n");
+}
+
+static void
+print_state (const char *where)
+{
+  printf ("%s : cached num: %d, hot num: %d,non residemt num: %d \n", where,
+          clock_pro.cached_buffer_num, clock_pro.hot_num,
+          clock_pro.non_resident_num);
+  show_usage ();
+}
+static void
+show_ring_begin_with (rtems_chain_node * node)
+{
+  rtems_chain_node *begin = node;
+  rtems_chain_node *chain_node = rtems_chain_next (node);
+  clock_pro_block *cb;
+
+  while ((chain_node) != begin) {
+    chain_node = rtems_chain_next (chain_node);
+    cb = container_of (chain_node, clock_pro_block, link);
+    if (&cb->link == clock_pro.hand_test) {
+      printf (" hand test->");
+    if (&cb->link == clock_pro.hand_hot) {
+      printf (" hand hot->");
+    }
+    if (&cb->link == clock_pro.hand_cold) {
+      printf (" hand cold->");
+    }
+    }
+    if (is_cached_buffer(cb)&&is_ref_buffer (cb)) {
+      printf ("i");
+    }
+    if (is_test_buffer (cb)) {
+      CLOCK_ASSERT (cb != clock_pro.init_block);
+      printf ("T");
+    } else if (is_hot_buffer (cb)) {
+      CLOCK_ASSERT (cb != clock_pro.init_block);
+      printf ("H");
+    } else if (is_cached_buffer (cb) && !is_hot_buffer (cb)) {
+      CLOCK_ASSERT (cb != clock_pro.init_block);
+      printf ("C");
+    }else {
+      printf ("M");
+    }
+  }
+}
+#else
+#define show_usage() ((void)0)
+#define print_state(_a) ((void)0)
+#define show_ring_begin_with(_a) ((void)0)
+#endif
 
 static int
 non_resident_compare_function (const rtems_rbtree_node * n1,
@@ -243,7 +306,8 @@ remove_non_resident_buffer_from_clock (clock_pro_block * cb)
   CLOCK_ASSERT (cb != clock_pro.init_block);
   check_conflict_with_hands(&cb->link);
   CLOCK_ASSERT (is_test_buffer (cb));
-  rtems_rbtree_extract_unprotected (&clock_pro.non_resident_rbtree,&cb->ptr.non_resident->rbtree_node);
+  rtems_rbtree_extract_unprotected (&clock_pro.non_resident_rbtree,
+  &cb->ptr.non_resident->rbtree_node);
   rtems_chain_extract_unprotected (&cb->link);
   rtems_chain_append_unprotected (&clock_pro.free_non_resident_list,
                                   &cb->link);
@@ -281,64 +345,6 @@ check_resident_num (void)
   clock_pro.hand_hot = (chain_node);
 }
 
-static void
-show_ring_begin_with (rtems_chain_node * node)
-{
-  rtems_chain_node *begin = node;
-  rtems_chain_node *chain_node = rtems_chain_next (node);
-  clock_pro_block *cb;
-
-  while ((chain_node) != begin) {
-    chain_node = rtems_chain_next (chain_node);
-    cb = container_of (chain_node, clock_pro_block, link);
-    if (&cb->link == clock_pro.hand_test) {
-      printf (" hand test->");
-    if (&cb->link == clock_pro.hand_hot) {
-      printf (" hand hot->");
-    }
-    if (&cb->link == clock_pro.hand_cold) {
-      printf (" hand cold->");
-    }
-    }
-    if (is_cached_buffer(cb)&&is_ref_buffer (cb)) {
-      printf ("i");
-    }
-    if (is_test_buffer (cb)) {
-      CLOCK_ASSERT (cb != clock_pro.init_block);
-      printf ("T");
-    } else if (is_hot_buffer (cb)) {
-      CLOCK_ASSERT (cb != clock_pro.init_block);
-      printf ("H");
-    } else if (is_cached_buffer (cb) && !is_hot_buffer (cb)) {
-      CLOCK_ASSERT (cb != clock_pro.init_block);
-      printf ("C");
-    }else {
-      printf ("M");
-    }
-  }
-}
-
-static void
-show_usage (void)
-{
-
-  printf ("test :");
-  show_ring_begin_with (clock_pro.hand_test);
-  printf ("\nhot  :");
-  show_ring_begin_with (clock_pro.hand_hot);
-  printf ("\ncold :");
-  show_ring_begin_with (clock_pro.hand_cold);
-  printf ("\n");
-}
-
-static void
-print_state (const char *where)
-{
-  printf ("%s : cached num: %d, hot num: %d,non residemt num: %d \n", where,
-          clock_pro.cached_buffer_num, clock_pro.hot_num,
-          clock_pro.non_resident_num);
-  show_usage ();
-}
 
 rtems_status_code
 _clock_pro_init (const rtems_bdbuf_config * config,
