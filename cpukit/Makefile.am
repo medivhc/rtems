@@ -120,6 +120,7 @@ include_rtems_rfs_HEADERS += libfs/src/rfs/rtems-rfs-trace.h
 include_rtems_HEADERS += libblock/include/rtems/bdbuf.h
 include_rtems_HEADERS += libblock/include/rtems/bdbuf_lru.h
 include_rtems_HEADERS += libblock/include/rtems/bdbuf_clock.h
+include_rtems_HEADERS += libblock/include/rtems/bdbuf_clock_pro.h
 include_rtems_HEADERS += libblock/include/rtems/blkdev.h
 include_rtems_HEADERS += libblock/include/rtems/diskdevs.h
 include_rtems_HEADERS += libblock/include/rtems/flashdisk.h

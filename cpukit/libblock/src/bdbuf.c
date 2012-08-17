@@ -27,7 +27,7 @@
 /**
  * Set to 1 to enable debug tracing.
  */
-#define RTEMS_BDBUF_TRACE 0
+#define RTEMS_BDBUF_TRACE 1
 
 #if HAVE_CONFIG_H
 #include "config.h"
@@ -232,8 +232,8 @@ static rtems_task rtems_bdbuf_read_ahead_task(rtems_task_argument arg);
  */
 static rtems_bdbuf_cache bdbuf_cache;
 
-
-rtems_status_code (*rtems_bdbuf_init_policy)(void);
+rtems_status_code (*rtems_bdbuf_init_policy)(const rtems_bdbuf_config *config,
+  rtems_chain_control *free_list);
 rtems_bdbuf_buffer *(*rtems_bdbuf_victim_next)(rtems_bdbuf_buffer *);
 void (*rtems_bdbuf_enqueue)(rtems_bdbuf_buffer *);
 void (*rtems_bdbuf_dequeue)(rtems_bdbuf_buffer *);
@@ -242,7 +242,7 @@ void (*rtems_bdbuf_dequeue)(rtems_bdbuf_buffer *);
 /**
  * If true output the trace message.
  */
-bool rtems_bdbuf_tracer;
+bool rtems_bdbuf_tracer =true;
 
 /**
  * Return the number of items on the list.
@@ -1057,7 +1057,6 @@ rtems_bdbuf_remove_from_tree_and_queue (rtems_bdbuf_buffer *bd)
       break;
     case RTEMS_BDBUF_STATE_CACHED:
       rtems_bdbuf_remove_from_tree (bd);
-      rtems_bdbuf_dequeue(bd);
       break;
     default:
       rtems_bdbuf_fatal (bd->state, RTEMS_BLKDEV_FATAL_BDBUF_STATE_10);
@@ -1068,6 +1067,11 @@ rtems_bdbuf_remove_from_tree_and_queue (rtems_bdbuf_buffer *bd)
 static void
 rtems_bdbuf_make_free_and_add_to_free_list (rtems_bdbuf_buffer *bd)
 {
+
+  if (bd->state == RTEMS_BDBUF_STATE_CACHED) {
+    rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_FREE);
+    rtems_bdbuf_dequeue (bd);
+  }
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_FREE);
   rtems_chain_prepend_unprotected (&bdbuf_cache.free_list, &bd->link);
 }
@@ -1075,7 +1079,11 @@ rtems_bdbuf_make_free_and_add_to_free_list (rtems_bdbuf_buffer *bd)
 static void
 rtems_bdbuf_make_empty (rtems_bdbuf_buffer *bd)
 {
-  rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_EMPTY);
+  if (bd->state == RTEMS_BDBUF_STATE_CACHED){
+    rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_EMPTY);
+    rtems_bdbuf_dequeue (bd);
+  }
+    rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_EMPTY);
 }
 
 static void
@@ -1129,6 +1137,7 @@ rtems_bdbuf_add_to_modified_list_after_access (rtems_bdbuf_buffer *bd)
     bd->hold_timer = bdbuf_config.swap_block_hold;
 
   rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_MODIFIED);
+
   rtems_chain_append_unprotected (&bdbuf_cache.modified, &bd->link);
 
   if (bd->waiters)
@@ -1312,7 +1321,7 @@ rtems_bdbuf_get_buffer_from_free_list_and_queue (rtems_disk_device *dd,
       }
     }
 
-  } while ( empty_bd == NULL && finished == false);
+  } while ( empty_bd == NULL &&  finished == false);
 
   if (empty_bd != NULL)
   {
@@ -1527,14 +1536,6 @@ rtems_bdbuf_init (void)
 
 
 
-  rtems_bdbuf_init_policy = bdbuf_config.policy.rtems_bdbuf_init_policy;
-  rtems_bdbuf_victim_next = bdbuf_config.policy.rtems_bdbuf_victim_next;
-  rtems_bdbuf_enqueue = bdbuf_config.policy.rtems_bdbuf_enqueue;
-  rtems_bdbuf_dequeue = bdbuf_config.policy.rtems_bdbuf_dequeue;
-
-  sc = rtems_bdbuf_init_policy();
-  if (sc != RTEMS_SUCCESSFUL)
-    goto error; 
   /*
    * The cache is empty after opening so we need to add all the buffers to it
    * and initialise the groups.
@@ -1567,6 +1568,14 @@ rtems_bdbuf_init (void)
     group->bdbuf = bd;
   }
 
+  rtems_bdbuf_init_policy = bdbuf_config.policy.rtems_bdbuf_init_policy;
+  rtems_bdbuf_victim_next = bdbuf_config.policy.rtems_bdbuf_victim_next;
+  rtems_bdbuf_enqueue = bdbuf_config.policy.rtems_bdbuf_enqueue;
+  rtems_bdbuf_dequeue = bdbuf_config.policy.rtems_bdbuf_dequeue;
+
+  sc = rtems_bdbuf_init_policy(&bdbuf_config, &bdbuf_cache.free_list );
+  if (sc != RTEMS_SUCCESSFUL)
+    goto error; 
   /*
    * Create and start swapout task. This task will create and manage the worker
    * threads.
@@ -1654,7 +1663,6 @@ rtems_bdbuf_wait_for_access (rtems_bdbuf_buffer *bd)
         rtems_chain_extract_unprotected (&bd->link);
         return;
       case RTEMS_BDBUF_STATE_CACHED:
-        rtems_bdbuf_dequeue(bd);
         /* Fall through */
       case RTEMS_BDBUF_STATE_EMPTY:
         return;
@@ -1913,6 +1921,8 @@ rtems_bdbuf_get (rtems_disk_device   *dd,
     {
       case RTEMS_BDBUF_STATE_CACHED:
         rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_CACHED);
+        rtems_bdbuf_dequeue(bd);
+        bd->flags |= BDBUF_REFERENCE;
         break;
       case RTEMS_BDBUF_STATE_EMPTY:
         rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_EMPTY);
@@ -2187,10 +2197,13 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
       case RTEMS_BDBUF_STATE_CACHED:
         ++dd->stats.read_hits;
         rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_CACHED);
+        rtems_bdbuf_dequeue(bd);
+        bd->flags |= BDBUF_REFERENCE;
         break;
       case RTEMS_BDBUF_STATE_MODIFIED:
         ++dd->stats.read_hits;
         rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_MODIFIED);
+        bd->flags |= BDBUF_REFERENCE;
         break;
       case RTEMS_BDBUF_STATE_EMPTY:
         ++dd->stats.read_misses;
@@ -2198,7 +2211,7 @@ rtems_bdbuf_read (rtems_disk_device   *dd,
         sc = rtems_bdbuf_execute_read_request (dd, bd, 1);
         if (sc == RTEMS_SUCCESSFUL)
         {
-          rtems_bdbuf_set_state (bd, RTEMS_BDBUF_STATE_ACCESS_CACHED);
+          rtems_bdbuf_set_state(bd,RTEMS_BDBUF_STATE_ACCESS_CACHED);
           rtems_bdbuf_dequeue(bd);
           rtems_bdbuf_group_obtain (bd);
         }
@@ -2982,7 +2995,6 @@ rtems_bdbuf_gather_for_purge (rtems_chain_control *purge_list,
           rtems_chain_append_unprotected (purge_list, &cur->link);
           break;
         case RTEMS_BDBUF_STATE_CACHED:
-          rtems_bdbuf_dequeue(cur);
           rtems_chain_append_unprotected (purge_list, &cur->link);
           break;
         case RTEMS_BDBUF_STATE_TRANSFER:

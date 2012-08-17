@@ -21,26 +21,30 @@
 #include <rtems/diskdevs.h>
 
 struct rtems_bdbuf_config;
+typedef struct rtems_bdbuf_config rtems_bdbuf_config;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define BDBUF_POLICY_CLOCK_ENTRY_POINTS { \
-       _clock_init,\
-       _clock_victim_next,\
-       _clock_enqueue, \
-       _clock_dequeue \
+#define BDBUF_POLICY_CLOCK_PRO_ENTRY_POINTS { \
+       _clock_pro_init,\
+       _clock_pro_victim_next,\
+       _clock_pro_enqueue, \
+       _clock_pro_dequeue \
 }
 
 
-rtems_status_code _clock_init (const rtems_bdbuf_config *config,
+rtems_status_code _clock_pro_init (const rtems_bdbuf_config *config,
   rtems_chain_control *free_list);
 
-rtems_bdbuf_buffer* _clock_victim_next (rtems_bdbuf_buffer *bd);
 
-void _clock_enqueue (rtems_bdbuf_buffer *bd);
 
-void _clock_dequeue (rtems_bdbuf_buffer *bd);
+rtems_bdbuf_buffer* _clock_pro_victim_next (rtems_bdbuf_buffer *bd);
+
+void _clock_pro_enqueue (rtems_bdbuf_buffer *bd);
+
+void _clock_pro_dequeue (rtems_bdbuf_buffer *bd);
 
 #ifdef __cplusplus
 }

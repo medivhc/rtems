@@ -19,11 +19,13 @@
 #include <rtems/blkdev.h>
 #include <rtems/diskdevs.h>
 
+
+struct rtems_bdbuf_config;
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define COUFIGURE_BDBUF_POLICY { \
+#define BDBUF_POLICY_LRU_ENTRY_POINTS { \
        _lru_init,\
        _lru_victim_next,\
        _lru_enqueue, \
@@ -31,7 +33,8 @@ extern "C" {
 }
 
 
-rtems_status_code _lru_init (void);
+rtems_status_code _lru_init (const rtems_bdbuf_config *config,
+  rtems_chain_control *free_list);
 
 rtems_bdbuf_buffer* _lru_victim_next (rtems_bdbuf_buffer *bd);
 

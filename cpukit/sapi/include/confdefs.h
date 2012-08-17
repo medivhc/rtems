@@ -1246,10 +1246,25 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
                               RTEMS_BDBUF_READ_AHEAD_TASK_PRIORITY_DEFAULT
   #endif
 
+  #if !defined(COUFIGURE_BDBUF_POLICY_CLOCK) &&\
+      !defined(COUFIGURE_BDBUF_POLICY_CLOCK_PRO)
+    #define COUFIGURE_BDBUF_POLICY_LRU
+  #endif
+
+  #if defined(COUFIGURE_BDBUF_POLICY_LRU)
+    #include <rtems/bdbuf_lru.h>
+    #define COUFIGURE_BDBUF_POLICY_ENTRY_POINTS BDBUF_POLICY_LRU_ENTRY_POINTS
+  #endif
+
   #if defined(COUFIGURE_BDBUF_POLICY_CLOCK)
     #include <rtems/bdbuf_clock.h>
-  #else 
-    #include <rtems/bdbuf_lru.h>
+    #define COUFIGURE_BDBUF_POLICY_ENTRY_POINTS BDBUF_POLICY_CLOCK_ENTRY_POINTS
+  #endif
+
+  #if defined(COUFIGURE_BDBUF_POLICY_CLOCK_PRO)
+    #include <rtems/bdbuf_clock_pro.h>
+    #define COUFIGURE_BDBUF_POLICY_ENTRY_POINTS \
+     BDBUF_POLICY_CLOCK_PRO_ENTRY_POINTS
   #endif
 
 
@@ -1267,7 +1282,7 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
       CONFIGURE_BDBUF_BUFFER_MIN_SIZE,
       CONFIGURE_BDBUF_BUFFER_MAX_SIZE,
       CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY,
-      COUFIGURE_BDBUF_POLICY
+      COUFIGURE_BDBUF_POLICY_ENTRY_POINTS
     };
   #endif
 

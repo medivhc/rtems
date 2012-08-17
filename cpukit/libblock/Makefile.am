@@ -33,11 +33,13 @@ libblock_a_SOURCES = src/bdbuf.c \
     src/media-dev-ident.c \
     src/bdbuf_lru.c \
     src/bdbuf_clock.c \
+    src/bdbuf_clock_pro.c \
     include/rtems/bdbuf.h include/rtems/blkdev.h \
     include/rtems/diskdevs.h include/rtems/flashdisk.h \
     include/rtems/ramdisk.h include/rtems/nvdisk.h include/rtems/nvdisk-sram.h \
     include/rtems/ide_part_table.h \
     include/rtems/bdbuf_lru.h \
+    include/rtems/bdbuf_clock_pro.h \
     include/rtems/bdbuf_clock.h
 
 include $(top_srcdir)/automake/local.am

@@ -3,6 +3,7 @@
  *
  * @ingroup rtems_bdbuf
  *
+
  * Block device buffer management.
  */
 
@@ -356,14 +357,15 @@ struct rtems_bdbuf_group
   uint32_t            users;         /**< How many users the block has. */
   rtems_bdbuf_buffer* bdbuf;         /**< First BD this block covers. */
 };
-
+typedef struct rtems_bdbuf_config rtems_bdbuf_config ;
 typedef struct { 
 
   /**
    * @brief Init replacement policy.
    * @retval RTEMS_SUCCESSFUL Successful operation.
    */
-  rtems_status_code (*rtems_bdbuf_init_policy) (void);
+  rtems_status_code (*rtems_bdbuf_init_policy) (const  rtems_bdbuf_config *config,
+  rtems_chain_control *free_list);
 
   /**
    * @brief Gets the victim buffer candidate.
@@ -723,6 +725,7 @@ rtems_bdbuf_reset_device_stats (rtems_disk_device *dd);
 /**
  * Defines for policy use.
  */
+
 #define BDBUF_PRIVATE1 0x01
 #define BDBUF_PRIVATE2 0x02
 #define BDBUF_PRIVATE3 0x04
@@ -730,7 +733,7 @@ rtems_bdbuf_reset_device_stats (rtems_disk_device *dd);
 #define BDBUF_PRIVATE5 0x10
 #define BDBUF_PRIVATE6 0x20
 #define BDBUF_PRIVATE7 0x40
-#define BDBUF_PRIVATE8 0x80
+#define BDBUF_REFERENCE 0x80
 /** @} */
 
 #ifdef __cplusplus

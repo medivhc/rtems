@@ -21,7 +21,8 @@
 rtems_chain_control lru;               /**< Least recently used list */
 
 rtems_status_code
-_lru_init()
+_lru_init(const rtems_bdbuf_config *config,
+  rtems_chain_control *free_list)
 {
   rtems_chain_initialize_empty(&lru);
   return RTEMS_SUCCESSFUL;
@@ -33,11 +34,11 @@ rtems_bdbuf_buffer* _lru_victim_next(rtems_bdbuf_buffer* pre)
   if (pre == NULL) {
     chain_node = rtems_chain_first (&lru);
   }
-  else { 
+  else {
     chain_node = rtems_chain_next (&pre->node);
   }
   if  (!rtems_chain_is_tail (&lru, chain_node)) {
-    rtems_bdbuf_buffer *bd = container_of(chain_node,rtems_bdbuf_buffer,node);
+    rtems_bdbuf_buffer *bd = container_of(chain_node,rtems_bdbuf_buffer,link);
     return bd;
   }
   return NULL;
@@ -45,10 +46,10 @@ rtems_bdbuf_buffer* _lru_victim_next(rtems_bdbuf_buffer* pre)
 
 void _lru_enqueue(rtems_bdbuf_buffer *bd)
 {
-  rtems_chain_append_unprotected (&lru, &bd->node);
+  rtems_chain_append_unprotected (&lru, &bd->link);
 }
 
 void _lru_dequeue(rtems_bdbuf_buffer *bd)
 {
-  rtems_chain_extract_unprotected (&bd->node);
+  rtems_chain_extract_unprotected (&bd->link);
 }

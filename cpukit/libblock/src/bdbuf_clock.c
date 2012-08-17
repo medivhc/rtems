@@ -20,80 +20,172 @@
 #define container_of(ptr, type, member) \
  ((type *)((char *)ptr - offsetof(type, member)))
 
+#define CLOCK_REF BDBUF_REFERENCE
 
-static rtems_chain_control clock_queue;              /**< clock queue */
-static rtems_chain_node *clock_hand ; 
-static rtems_chain_node *start ;
+typedef struct clock_block {
+  rtems_chain_node node;
+  rtems_bdbuf_buffer *bd;
+} clock_block;
+static clock_block * blocks;
+rtems_chain_node *clock_hand ;
+static uint32_t clock_size;
+static bool is_second_round;
+
+
+static void print_usage(void)
+{
+  const char* states[] =
+    { "FR", "EM", "CH", "AC", "AM", "AE", "AP", "MD", "SY", "TR", "TP" };
+
+  rtems_chain_node* chain_node = clock_hand;
+  clock_block *cb;
+
+  do {
+    cb = container_of (chain_node, clock_block,node);
+    printf("%s ",states[cb->bd->state]);
+    chain_node = rtems_chain_next( chain_node);
+  } while (chain_node!= clock_hand);
+  printf("\n");
+
+}
+
+static uint32_t rtems_bdbuf_list_count (rtems_chain_control* list)
+{
+  rtems_chain_node* node = rtems_chain_first (list);
+  uint32_t          count = 0;
+  while (!rtems_chain_is_tail (list, node))
+  {
+    count++;
+    node = rtems_chain_next (node);
+  }
+  return count;
+}
 
 rtems_status_code
-_clock_init()
+_clock_init(const rtems_bdbuf_config  *config,
+  rtems_chain_control *free_list)
 {
-  rtems_chain_initialize_empty(&clock_queue);
-  clock_hand = NULL;
+  rtems_chain_node first_node;
+  rtems_chain_node *chain_node = rtems_chain_first (free_list);
+  uint32_t count = rtems_bdbuf_list_count (free_list);
+  clock_size = count;
+  blocks = calloc (count, sizeof (clock_block));
+  if (blocks == NULL) {
+    return RTEMS_UNSATISFIED;
+  }
+  uint32_t i = 0;
+  rtems_bdbuf_buffer *bd;
+  first_node.next = &first_node;
+  first_node.previous = &first_node;
+
+  while (!rtems_chain_is_tail(free_list,chain_node)){
+    bd = container_of(chain_node,rtems_bdbuf_buffer,link);
+    bd->user = &blocks[i];
+    blocks[i].bd = bd;
+    rtems_chain_insert_unprotected(&first_node,&blocks[i].node);
+    chain_node = rtems_chain_next(chain_node);
+    ++ i;
+  }
+
+  clock_hand = rtems_chain_next(&first_node);
+  rtems_chain_extract_unprotected (&first_node);
+
+  is_second_round = false;
+  printf("clock_size %ld\n", clock_size);
+
   return RTEMS_SUCCESSFUL;
 }
 
 rtems_bdbuf_buffer* _clock_victim_next(rtems_bdbuf_buffer* pre)
 {
-  rtems_chain_node *chain_node;
-  if (pre == NULL) {
-    rtems_chain_node* first = rtems_chain_head (&clock_queue);
-    rtems_chain_node* last = rtems_chain_tail (&clock_queue);
-    first->previous = last;
-    last-> next = first;
-    chain_node = clock_hand;
-    start = clock_hand ;
+  printf("victim\n");
+  print_usage();
+  clock_block *cb;
+  rtems_chain_node* chain_node;
+  rtems_chain_node *start;
+  if ( pre == NULL) {
+    chain_node = start = clock_hand ;
   } else {
-    chain_node = &pre->node;
+    cb = pre->user;
+    chain_node = start  = rtems_chain_next(&cb->node);
   }
-  if (chain_node == NULL) {
-    return NULL;
+  if (!is_second_round){
+    do {
+      cb = container_of (chain_node,clock_block,node);
+      if (cb->bd->state == RTEMS_BDBUF_STATE_CACHED
+        &&(cb->bd->flags & CLOCK_REF) ==0) {
+          return cb->bd;
+      }
+      chain_node = rtems_chain_next(chain_node);
+    } while (chain_node!= start);
+    is_second_round =true;
   }
-  while (rtems_chain_next(chain_node) != start) {
-     rtems_bdbuf_buffer * bd =
-      container_of(chain_node,rtems_bdbuf_buffer,node);
-     if (bd->state == RTEMS_BDBUF_STATE_CACHED &&
-       bd->flags & CLOCK_HIT !=0 ) {
-       return  bd;
-     } else {
-       chain_node  = rtems_chain_next(chain_node);
-     }
-  }
+
+  do {
+    cb = container_of (chain_node,clock_block,node);
+    if (cb->bd->state == RTEMS_BDBUF_STATE_CACHED) {
+      return cb->bd;
+    }
+    chain_node = rtems_chain_next(chain_node);
+  } while (chain_node!= start);
+
+  is_second_round =false;
+
   return NULL;
 }
 
 void _clock_enqueue(rtems_bdbuf_buffer *bd)
 {
-  if (( bd->flags & CLOCK_IN_QUEUE ) == 0) {
-    rtems_chain_append_unprotected (&clock_queue, &bd->node);
-    bd->flags |= CLOCK_IN_QUEUE;
-    clock_hand = &bd->node;
-    start = &bd->node;
-  } else {
-    if (bd->state == RTEMS_BDBUF_STATE_TRANSFER) {
-      bd->flags |= CLOCK_HIT;
+  printf("enqueue\n");
+  print_usage();
+  rtems_chain_node *chain_node;
+  clock_block *cb = bd->user;
+  chain_node = &cb->node;
+  switch (bd->state) {
+    case RTEMS_BDBUF_STATE_TRANSFER:
+    if (chain_node == clock_hand){
+      clock_hand = rtems_chain_next(clock_hand);
+    }else {
+      rtems_chain_extract_unprotected(chain_node);
+      rtems_chain_insert_unprotected(rtems_chain_previous(clock_hand),chain_node);
     }
+    case RTEMS_BDBUF_STATE_ACCESS_CACHED:
+    default:
+    break;
   }
 }
 
 void _clock_dequeue(rtems_bdbuf_buffer *bd)
 {
+  printf("dequeue\n");
+  print_usage();
+  clock_block *cb;
+  clock_block *current;
   rtems_chain_node *chain_node;
-  switch  (bd->state) {
+  switch (bd->state){
     case RTEMS_BDBUF_STATE_EMPTY:
-      chain_node = &bd->node;
-      while (rtems_chain_next(chain_node) != start) {
-        rtems_bdbuf_buffer * bd =
-          container_of(chain_node,rtems_bdbuf_buffer,node);
-        chain_node  = rtems_chain_previous(chain_node);
-        bd->flags &= ~CLOCK_HIT;
+      cb = bd->user;
+      if (!is_second_round){
+        chain_node = clock_hand;
+        do {
+          current = container_of (chain_node,clock_block,node);
+          (current->bd->flags) &= ~CLOCK_REF;
+          chain_node = rtems_chain_next (chain_node);
+        } while (chain_node!= &cb->node);
+      } else {
+        chain_node = &cb->node;
+        do {
+          current = container_of (chain_node,clock_block,node);
+          (current->bd->flags) &= ~CLOCK_REF;
+          chain_node = rtems_chain_next (chain_node);
+        } while (chain_node!= &cb->node);
+        is_second_round =false;
       }
-      clock_hand = &bd->node;
-      break;
+      clock_hand = &cb->node;
+    case RTEMS_BDBUF_STATE_CACHED:
+    case RTEMS_BDBUF_STATE_FREE:
     case RTEMS_BDBUF_STATE_ACCESS_CACHED:
-      bd->flags |= CLOCK_HIT;
-      break;
     default:
-      return;
+    break;
   }
 }
