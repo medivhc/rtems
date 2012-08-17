@@ -14,7 +14,7 @@
 #include "rtems/bdbuf.h"
 #include "rtems/bdbuf_clock.h"
 
-#define CLOCK_TRACE 0
+#define CLOCK_TRACE 1
 
 #define container_of(ptr, type, member) \
  ((type *)((char *)ptr - offsetof(type, member)))
@@ -32,13 +32,14 @@ static bool is_second_round;
 
 
 #if CLOCK_TRACE
-static void print_usage(void)
+static void print_usage(const char *where)
 {
   const char* states[] =
     { "FR", "EM", "CH", "AC", "AM", "AE", "AP", "MD", "SY", "TR", "TP" };
 
   rtems_chain_node* chain_node = clock_hand;
   clock_block *cb;
+  printf("%s\n",where);
 
   do {
     cb = container_of (chain_node, clock_block,node);
@@ -48,7 +49,7 @@ static void print_usage(void)
   printf("\n");
 }
 #else
-#define print_usage ((void)0)
+#define print_usage(_a) ((void)0)
 #endif
 
 static uint32_t rtems_bdbuf_list_count (rtems_chain_control* list)
@@ -100,8 +101,7 @@ _clock_init(const rtems_bdbuf_config  *config,
 
 rtems_bdbuf_buffer* _clock_victim_next(rtems_bdbuf_buffer* pre)
 {
-  printf("victim\n");
-  print_usage();
+  print_usage("victim");
   clock_block *cb;
   rtems_chain_node* chain_node;
   rtems_chain_node *start;
@@ -138,8 +138,7 @@ rtems_bdbuf_buffer* _clock_victim_next(rtems_bdbuf_buffer* pre)
 
 void _clock_enqueue(rtems_bdbuf_buffer *bd)
 {
-  printf("enqueue\n");
-  print_usage();
+  print_usage("enqueue");
   rtems_chain_node *chain_node;
   clock_block *cb = bd->user;
   chain_node = &cb->node;
@@ -159,8 +158,7 @@ void _clock_enqueue(rtems_bdbuf_buffer *bd)
 
 void _clock_dequeue(rtems_bdbuf_buffer *bd)
 {
-  printf("dequeue\n");
-  print_usage();
+  print_usage("dequeue");
   clock_block *cb;
   clock_block *current;
   rtems_chain_node *chain_node;

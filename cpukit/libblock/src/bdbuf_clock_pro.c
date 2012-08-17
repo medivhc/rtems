@@ -75,27 +75,12 @@ typedef struct
 } clock_pro_state;
 
 static clock_pro_state clock_pro;
-#if CLOCK_PRO_TRACE
-static void
-show_usage (void)
-{
-  printf ("test :");
-  show_ring_begin_with (clock_pro.hand_test);
-  printf ("\nhot  :");
-  show_ring_begin_with (clock_pro.hand_hot);
-  printf ("\ncold :");
-  show_ring_begin_with (clock_pro.hand_cold);
-  printf ("\n");
-}
 
-static void
-print_state (const char *where)
-{
-  printf ("%s : cached num: %d, hot num: %d,non residemt num: %d \n", where,
-          clock_pro.cached_buffer_num, clock_pro.hot_num,
-          clock_pro.non_resident_num);
-  show_usage ();
-}
+static bool is_cached_buffer(clock_pro_block *cb);
+static bool is_test_buffer(clock_pro_block *cb);
+static bool is_hot_buffer(clock_pro_block *cb);
+static bool is_ref_buffer(clock_pro_block *cb);
+#if CLOCK_PRO_TRACE
 static void
 show_ring_begin_with (rtems_chain_node * node)
 {
@@ -131,6 +116,26 @@ show_ring_begin_with (rtems_chain_node * node)
       printf ("M");
     }
   }
+}
+static void
+show_usage (void)
+{
+  printf ("test :");
+  show_ring_begin_with (clock_pro.hand_test);
+  printf ("\nhot  :");
+  show_ring_begin_with (clock_pro.hand_hot);
+  printf ("\ncold :");
+  show_ring_begin_with (clock_pro.hand_cold);
+  printf ("\n");
+}
+
+static void
+print_state (const char *where)
+{
+  printf ("%s : cached num: %d, hot num: %d,non residemt num: %d \n", where,
+          clock_pro.cached_buffer_num, clock_pro.hot_num,
+          clock_pro.non_resident_num);
+  show_usage ();
 }
 #else
 #define show_usage() ((void)0)
