@@ -107,6 +107,8 @@ mrfs_fstime/Makefile
 fsnofs01/Makefile
 fsimfsgeneric01/Makefile
 fsbdpart01/Makefile
+mdosfs_fsbenchmark/Makefile
+mrfs_fsbenchmark/Makefile
 
 ])
 AC_OUTPUT

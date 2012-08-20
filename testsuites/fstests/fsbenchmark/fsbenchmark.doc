@@ -1,0 +1,24 @@
+#  COPYRIGHT (c) 1989-2011.
+#  On-Line Applications Research Corporation (OAR).
+#
+#  The license and distribution terms for this file may be
+#  found in the file LICENSE in this distribution or at
+#  http://www.rtems.com/license/LICENSE.
+#
+
+This file describes the directives and concepts tested by this test set.
+
+test set name: fsbenchmark
+
+directives:
+
++ open
++ read
++ write
++ lseek
+
+
+concepts:
++ This test could  be a benchmark for bdbuf. The basic concept of the test is
+ to prase strings contains the I/O operation meta data and carry out these
+ operation.
