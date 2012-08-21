@@ -1245,6 +1245,29 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
     #define CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY \
                               RTEMS_BDBUF_READ_AHEAD_TASK_PRIORITY_DEFAULT
   #endif
+
+  #if !defined(CONFIGURE_BDBUF_POLICY_CLOCK) &&\
+      !defined(CONFIGURE_BDBUF_POLICY_CLOCK_PRO)
+    #define CONFIGURE_BDBUF_POLICY_LRU
+  #endif
+
+  #if defined(CONFIGURE_BDBUF_POLICY_LRU)
+    #include <rtems/bdbuf_lru.h>
+    #define CONFIGURE_BDBUF_POLICY_ENTRY_POINTS BDBUF_POLICY_LRU_ENTRY_POINTS
+  #endif
+
+  #if defined(CONFIGURE_BDBUF_POLICY_CLOCK)
+    #include <rtems/bdbuf_clock.h>
+    #define CONFIGURE_BDBUF_POLICY_ENTRY_POINTS BDBUF_POLICY_CLOCK_ENTRY_POINTS
+  #endif
+
+  #if defined(CONFIGURE_BDBUF_POLICY_CLOCK_PRO)
+    #include <rtems/bdbuf_clock_pro.h>
+    #define CONFIGURE_BDBUF_POLICY_ENTRY_POINTS \
+     BDBUF_POLICY_CLOCK_PRO_ENTRY_POINTS
+  #endif
+
+
   #ifdef CONFIGURE_INIT
     const rtems_bdbuf_config rtems_bdbuf_configuration = {
       CONFIGURE_BDBUF_MAX_READ_AHEAD_BLOCKS,
@@ -1258,9 +1281,12 @@ rtems_fs_init_functions_t    rtems_fs_init_helper =
       CONFIGURE_BDBUF_CACHE_MEMORY_SIZE,
       CONFIGURE_BDBUF_BUFFER_MIN_SIZE,
       CONFIGURE_BDBUF_BUFFER_MAX_SIZE,
-      CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY
+      CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY,
+      CONFIGURE_BDBUF_POLICY_ENTRY_POINTS
     };
   #endif
+
+
 
   #define CONFIGURE_LIBBLOCK_TASKS \
     (1 + CONFIGURE_SWAPOUT_WORKER_TASKS + \
